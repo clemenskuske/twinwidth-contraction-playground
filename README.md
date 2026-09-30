@@ -21,7 +21,7 @@ The page accepts URL parameters so a graph and a starting sequence can be shared
 
 - `graph=tree|clique|subdivided|custom|customPath` chooses the graph preset. `given` and `path` are accepted aliases for the two supplied graphs.
 - `vertices=15` chooses the tree/clique order. `subdivisions=2` chooses the number of new vertices per edge for a subdivided clique.
-- `relayout=0` or `relayout=1` turns the automatic force-directed relayout after each merge off or on. (`force=0|1` is accepted as an alias.)
+- `relayout=0` or `relayout=1` pauses or enables the live force-directed layout. (`force=0|1` is accepted as an alias.)
 - `sequence=1-2,3-4` applies contractions when the page opens. For the supplied graph, use labels such as `sequence=a-b,c-d`; each label may refer to any original vertex inside a current bag.
 
 For example, [open the supplied graph with two contractions](https://clemenskuske.github.io/twinwidth-contraction-playground/?graph=custom&relayout=1&sequence=a-b,c-d). Query parameters only set the initial state; later changes in the controls work normally.
@@ -36,7 +36,7 @@ For example, [open the supplied graph with two contractions](https://clemenskusk
 - Drag one vertex onto another. The target highlights and the resulting graph is previewed; release to commit.
 - Drag into empty space to rearrange the drawing without contracting.
 - Select two vertices and double-click either one to lock the contraction preview on the canvas. You can also select the first vertex and double-click the second directly; choose **Merge selected vertices** when ready.
-- **Re-layout after merge** is enabled by default. It runs a deterministic force-directed pass after each contraction to spread the remaining graph; turn the checkbox off to preserve the current positions.
+- **Live force layout** is enabled by default. It keeps a damped force simulation running until the graph settles, pauses while you drag or pan, and resumes after a contraction, undo, redo, or graph reset. Turn the switch off to freeze the current positions.
 - Alternatively, select two vertices by clicking them or using Tab and Enter, then press **Merge selected vertices**.
 - **Back**, Backspace, or Ctrl/Cmd+Z undoes a contraction, restoring its pre-drag layout, edges, bags, and width. The arrow beside Back or Ctrl/Cmd+Shift+Z restores an undone contraction.
 - Escape cancels an active drag or clears the selection. A new contraction after undo discards the redo branch.
@@ -50,6 +50,6 @@ The current maximum red degree and the maximum over the entire current sequence 
 
 Reference: Bonnet, Kim, Thomassé, and Watrigant, [Twin-width I: tractable FO model checking](https://arxiv.org/abs/2004.14789).
 
-`engine.js` contains the pure graph operations and undo/redo session; `force-layout.js` contains the deterministic post-merge layout pass; `viewport.js` handles camera geometry; `app.js` handles pointer and keyboard interaction; `style.css` provides the responsive layout.
+`engine.js` contains the pure graph operations and undo/redo session; `force-layout.js` contains the deterministic damped force simulation; `viewport.js` handles camera geometry; `app.js` handles pointer, keyboard, and animation interaction; `style.css` provides the responsive layout.
 
 Run correctness checks with `node --test *.test.cjs`.

@@ -25,3 +25,15 @@ test('force layout separates coincident positions after a merge', () => {
   const positions = graph.nodes.map(node => `${node.x.toFixed(6)}:${node.y.toFixed(6)}`);
   assert.ok(new Set(positions).size > 1);
 });
+
+test('continuous force simulation settles and can be woken', () => {
+  const graph = T.createGraph('tree', 15), simulation = Force.createSimulation(graph);
+  const initial = graph.nodes.map(node => [node.x, node.y]);
+  let steps = 0;
+  while (!simulation.stable && steps < 1000) { Force.step(simulation); steps++; }
+  assert.equal(simulation.stable, true);
+  assert.notDeepEqual(graph.nodes.map(node => [node.x, node.y]), initial);
+  graph.nodes[0].x = .9;
+  Force.wake(simulation); Force.step(simulation);
+  assert.equal(simulation.stable, false);
+});

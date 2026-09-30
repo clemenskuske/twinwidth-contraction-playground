@@ -11,6 +11,7 @@
   const query = new URLSearchParams(window.location.search);
   let selection = [], drag = null, hover = null, subdivisions = 1, previewCache = null, previewLocked = false;
   let forceLayoutEnabled = $('force-layout').checked;
+  let forceSimulation = null, forceFrame = 0;
   let pan = null, pinch = null;
   const pointers = new Map();
   let lastClick = null, ignoreClick = false;
@@ -64,8 +65,7 @@
     svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
   }
   function separateInitialNodes() {
-    // Resolve collisions once when creating a graph. No moving force layout
-    // interferes with dragging or with the user's subsequent rearrangements.
+    // Resolve obvious collisions before the live simulation begins.
     const nodes = session.graph.nodes, minimum = 2 * radius + 10;
     // Dense graphs get a larger drawing, which is then fitted into the view.
     // This leaves space to inspect the subdivision paths by zooming in.
@@ -105,12 +105,48 @@
   function zoomBy(factor, anchor = {x: width / 2, y: height / 2}) {
     view.zoomAt(factor, anchor); updateView();
   }
+  function stopForceLayout() {
+    if (forceFrame) cancelAnimationFrame(forceFrame);
+    forceFrame = 0;
+  }
+  function ensureForceSimulation() {
+    if (!forceLayoutEnabled || session.graph.nodes.length < 2) return null;
+    if (!forceSimulation || forceSimulation.graph !== session.graph) forceSimulation = window.GraphForce.createSimulation(session.graph);
+    return forceSimulation;
+  }
+  function scheduleForceLayout() {
+    if (!forceLayoutEnabled || forceFrame || drag || pan || pinch || pointers.size || session.graph.nodes.length < 2) return;
+    if (!ensureForceSimulation()) return;
+    forceFrame = requestAnimationFrame(runForceLayoutFrame);
+  }
+  function runForceLayoutFrame() {
+    forceFrame = 0;
+    if (!forceLayoutEnabled || drag || pan || pinch || pointers.size) return;
+    const simulation = ensureForceSimulation();
+    if (!simulation) return;
+    window.GraphForce.step(simulation);
+    previewCache = null;
+    draw();
+    if (!simulation.stable) scheduleForceLayout();
+  }
+  function wakeForceLayout() {
+    const simulation = ensureForceSimulation();
+    if (!simulation) { stopForceLayout(); return; }
+    window.GraphForce.wake(simulation);
+    scheduleForceLayout();
+  }
+  function resumeForceLayout() {
+    if (forceLayoutEnabled) scheduleForceLayout();
+  }
   function relayoutGraph() {
+    stopForceLayout();
     cancelInteractions();
     window.GraphForce.layout(session.graph);
+    forceSimulation = forceLayoutEnabled ? window.GraphForce.createSimulation(session.graph) : null;
     previewCache = null;
     render();
     announce('Re-laid out the current graph with forces.');
+    scheduleForceLayout();
   }
   function scheduleDraw() {
     if (drawFrame) return;
@@ -235,9 +271,10 @@
   function finishMerge(a, b, before) {
     const source = session.graph.nodes.find(n => n.id === a), target = session.graph.nodes.find(n => n.id === b);
     session.merge(a, b, before);
-    if (forceLayoutEnabled) window.GraphForce.layout(session.graph);
+    forceSimulation = null;
     selection = []; hover = null; previewLocked = false;
     render();
+    wakeForceLayout();
     announce(`Merged ${membersText(source.members)} and ${membersText(target.members)}. ${session.graph.nodes.length} ${session.graph.nodes.length === 1 ? 'vertex remains' : 'vertices remain'}. Maximum red degree ${T.maxDegree(session.graph)}. Width so far ${session.graph.peak}.`);
   }
   function cancelDrag() {
@@ -263,13 +300,15 @@
   function goBack() {
     cancelInteractions();
     if (!session.back()) return;
-    selection = []; previewLocked = false; render();
+    forceSimulation = null;
+    selection = []; previewLocked = false; render(); wakeForceLayout();
     announce(`Undid contraction. ${session.graph.nodes.length} vertices remain. Width so far ${session.graph.peak}.`);
   }
   function goForward() {
     cancelInteractions();
     if (!session.forward()) return;
-    selection = []; previewLocked = false; render(); announce('Contraction restored.');
+    forceSimulation = null;
+    selection = []; previewLocked = false; render(); wakeForceLayout(); announce('Contraction restored.');
   }
   function sequenceParts(specification) {
     return String(specification).split(/[;,]/).map(part => part.trim()).filter(Boolean).map(part => {
@@ -292,12 +331,13 @@
       if (!source || !target) { error = `Could not find both vertices in “${part.raw}”.`; break; }
       if (source.id === target.id) { error = `“${part.raw}” refers to the same current bag twice.`; break; }
       session.merge(source.id, target.id);
-      if (forceLayoutEnabled) window.GraphForce.layout(session.graph);
       applied++;
     }
     return {applied, error};
   }
   function start(kind, options = {}) {
+    stopForceLayout();
+    forceSimulation = null;
     cancelInteractions(); selection = []; hover = null; previewCache = null; previewLocked = false; lastClick = null; ignoreClick = false;
     session.reset(kind, sizes[kind], subdivisions);
     measure(); separateInitialNodes();
@@ -312,11 +352,13 @@
     $('family-description').textContent = kind === 'tree' ? `A binary tree on ${sizes[kind]} vertices.` : kind === 'clique' ? `K${sizes[kind]} · every pair of vertices is adjacent.` : kind === 'subdivided' ? `K${sizes[kind]} · ${subdivisions} new ${subdivisions === 1 ? 'vertex' : 'vertices'} per edge · ${subdivisions + 1} edges per path · ${session.initialCount} vertices total.` : kind === 'customPath' ? 'The specified graph plus the path b–l–m–f.' : 'The specified graph on vertices a through k.';
     render();
     if (!options.sequence) {
+      wakeForceLayout();
       announce(`Started ${names[kind].toLowerCase()} with ${session.initialCount} vertices.`);
       return;
     }
     const result = applyInitialSequence(options.sequence);
     render();
+    wakeForceLayout();
     const suffix = result.error ? ` ${result.error}` : '';
     announce(result.applied ? `Loaded ${result.applied} initial contraction${result.applied === 1 ? '' : 's'}.${suffix}` : `Started ${names[kind].toLowerCase()} with no initial contractions.${suffix}`);
   }
@@ -324,6 +366,7 @@
   svg.addEventListener('pointerdown', event => {
     if (event.button !== 0 || pointers.size >= 2) return;
     event.preventDefault();
+    stopForceLayout();
     const p = position(event);
     pointers.set(event.pointerId, p);
     svg.setPointerCapture(event.pointerId);
@@ -382,11 +425,13 @@
       if (remaining) pan = {id: remaining[0], start: remaining[1], before: {x: view.x, y: view.y, scale: view.scale}};
       else svg.classList.remove('panning');
       if (svg.hasPointerCapture(event.pointerId)) svg.releasePointerCapture(event.pointerId);
+      if (!remaining) resumeForceLayout();
       return;
     }
     if (pan?.id === event.pointerId) {
       pan = null; svg.classList.remove('panning');
       if (svg.hasPointerCapture(event.pointerId)) svg.releasePointerCapture(event.pointerId);
+      resumeForceLayout();
       return;
     }
     if (!drag || event.pointerId !== drag.pointerId) return;
@@ -398,15 +443,15 @@
     drag = null; hover = null;
     if (svg.hasPointerCapture(event.pointerId)) svg.releasePointerCapture(event.pointerId);
     if (!completed.moved) {
-      if (ignoreClick) { ignoreClick = false; return; }
+      if (ignoreClick) { ignoreClick = false; resumeForceLayout(); return; }
       const now = performance.now(), doubleClick = event.detail === 2 || (lastClick?.id === completed.id && now - lastClick.time < 500);
-      if (doubleClick && lockPreview(completed.id, true)) return;
+      if (doubleClick && lockPreview(completed.id, true)) { resumeForceLayout(); return; }
       lastClick = {id: completed.id, time: now};
-      selectNode(completed.id); return;
+      selectNode(completed.id); resumeForceLayout(); return;
     }
     lastClick = null;
     if (target !== null) finishMerge(completed.id, target, completed.before);
-    else { draw(); announce('Vertex moved. No contraction made.'); }
+    else { draw(); announce('Vertex moved. No contraction made.'); wakeForceLayout(); }
   });
   svg.addEventListener('dblclick', event => {
     const element = event.target.closest('[data-node]');
@@ -427,7 +472,7 @@
         return;
       }
     }
-    cancelInteractions(true);
+    cancelInteractions(true); resumeForceLayout();
   });
   // Losing capture is not itself a cancellation: it is commonly delivered as
   // part of a normal pointerup sequence. pointercancel handles true aborts.
@@ -448,7 +493,7 @@
     if (element && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); selectNode(Number(element.dataset.node)); }
   });
   document.addEventListener('keydown', event => {
-    if (event.key === 'Escape') { cancelInteractions(true); selection = []; previewLocked = false; draw(); return; }
+    if (event.key === 'Escape') { cancelInteractions(true); selection = []; previewLocked = false; draw(); resumeForceLayout(); return; }
     if (event.target.matches('input, textarea, select') || event.target.isContentEditable) return;
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); event.shiftKey ? goForward() : goBack(); }
     else if (event.key === 'Backspace') { event.preventDefault(); goBack(); }
@@ -463,7 +508,9 @@
   $('merge-selected').addEventListener('click', () => { const pair = selectedPair(); if (pair) finishMerge(...pair); });
   $('force-layout').addEventListener('change', event => {
     forceLayoutEnabled = event.target.checked;
-    announce(forceLayoutEnabled ? 'Force re-layout enabled for the next merge.' : 'Force re-layout disabled; merges keep their current positions.');
+    if (forceLayoutEnabled) { forceSimulation = null; wakeForceLayout(); }
+    else { stopForceLayout(); forceSimulation = null; }
+    announce(forceLayoutEnabled ? 'Live force layout enabled; the graph will settle automatically.' : 'Live force layout paused; the current positions are preserved.');
   });
   $('reset').addEventListener('click', () => start(session.graph.kind));
   document.querySelectorAll('[data-kind]').forEach(button => button.addEventListener('click', () => { if (button.dataset.kind !== session.graph.kind) start(button.dataset.kind); }));

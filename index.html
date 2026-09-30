@@ -9,8 +9,8 @@
   <link rel="stylesheet" href="style.css">
   <script src="engine.js" defer></script>
   <script src="viewport.js" defer></script>
-  <script src="force-layout.js" defer></script>
-  <script src="app.js" defer></script>
+  <script src="force-layout.js?v=2" defer></script>
+  <script src="app.js?v=2" defer></script>
 </head>
 <body>
   <main class="app">
@@ -30,7 +30,7 @@
       <div class="graph-parameters">
         <div class="size-control"><label id="size-label" for="graph-size">Vertices</label><input id="graph-size" type="number" min="3" max="31" value="15" inputmode="numeric" aria-describedby="size-range"><span id="size-range" class="sr-only">Between 3 and 31 vertices</span></div>
         <div id="subdivisions-control" class="size-control" hidden><label for="subdivisions">Subdivisions / edge</label><input id="subdivisions" type="number" min="0" max="20" step="1" value="1" inputmode="numeric" aria-describedby="subdivisions-help" title="New vertices inserted per original edge"><span id="subdivisions-help" class="sr-only">0 to 20 new vertices per original edge. Changing this starts a new graph.</span></div>
-        <label class="layout-toggle" title="Run a force-directed layout after each merge"><input id="force-layout" type="checkbox" checked><span>Re-layout after merge</span></label>
+        <label class="layout-toggle" title="Keep the force-directed layout running until the graph settles"><input id="force-layout" type="checkbox" checked><span>Live force layout</span></label>
       </div>
     </section>
 
@@ -60,7 +60,7 @@
     </div>
 
     <section id="help-panel" hidden>
-      <div><h2>Try, undo, try again.</h2><p>Drop one vertex onto another to contract them. Hovering over a target previews the new edges and maximum red degree. Move a vertex into empty space to change the drawing.</p><p>Scroll or pinch over the canvas to zoom; drag the background to pan. The <strong>− / +</strong> buttons zoom around the center, <strong>Fit</strong> brings the whole graph back into view, and <strong>Re-layout</strong> runs the force-directed layout immediately. With the canvas focused, use <strong>− / + / 0</strong>.</p><p>For a subdivided clique, the subdivision count is the number of new vertices inserted into each original edge. A count of 0 leaves the clique unchanged.</p><p>After a merge, <strong>Re-layout after merge</strong> runs a short force-directed layout to spread connected vertices. Turn it off to keep the current positions.</p><p>To keep a contraction preview on the canvas, select two vertices and double-click either one. You can also select the first vertex, then double-click the second directly. Choose <strong>Merge selected vertices</strong> when ready.</p><p>Press <strong>Escape</strong> to cancel a drag or clear a selection.</p></div>
+      <div><h2>Try, undo, try again.</h2><p>Drop one vertex onto another to contract them. Hovering over a target previews the new edges and maximum red degree. Move a vertex into empty space to change the drawing.</p><p>Scroll or pinch over the canvas to zoom; drag the background to pan. The <strong>− / +</strong> buttons zoom around the center, <strong>Fit</strong> brings the whole graph back into view, and <strong>Re-layout</strong> runs the force-directed layout immediately. With the canvas focused, use <strong>− / + / 0</strong>.</p><p>For a subdivided clique, the subdivision count is the number of new vertices inserted into each original edge. A count of 0 leaves the clique unchanged.</p><p><strong>Live force layout</strong> keeps the force simulation running while the graph is unsettled. Turn it off to freeze the current positions; dragging and panning pause it temporarily and it resumes when you release.</p><p>To keep a contraction preview on the canvas, select two vertices and double-click either one. You can also select the first vertex, then double-click the second directly. Choose <strong>Merge selected vertices</strong> when ready.</p><p>Press <strong>Escape</strong> to cancel a drag or clear a selection.</p></div>
       <div><h3>What happens to the edges?</h3><p>Two black edges to the same neighbor stay black. Two absent edges stay absent. Every other combination becomes red. Red edges stay red through further contractions.</p><p>The number beside a vertex is its red degree. “Width so far” is the largest red degree seen in your sequence; Back restores that value too.</p><p class="source">Definition: <a href="https://arxiv.org/abs/2004.14789" target="_blank" rel="noreferrer">Bonnet, Kim, Thomassé &amp; Watrigant</a>.</p></div>
     </section>
     <footer class="page-footer"><span>One contraction at a time.</span><span id="family-description">A complete binary tree on 15 vertices.</span></footer>
