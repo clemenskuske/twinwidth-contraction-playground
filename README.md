@@ -10,6 +10,11 @@ python3 -m http.server 8765 --bind 127.0.0.1
 
 Then open http://127.0.0.1:8765.
 
+## Published app
+
+The current version is published at [clemenskuske.github.io/twinwidth-contraction-playground](https://clemenskuske.github.io/twinwidth-contraction-playground/).
+The GitHub Actions workflow in `.github/workflows/deploy-pages.yml` redeploys the static app automatically after every push to `main`. It can also be started manually from the repository's **Actions** tab.
+
 ## Trying contractions
 
 - Choose a binary tree, clique, subdivided clique, or the supplied graph on vertices a through k. The size input starts a fresh graph where applicable.
