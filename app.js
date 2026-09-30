@@ -75,6 +75,13 @@
   function zoomBy(factor, anchor = {x: width / 2, y: height / 2}) {
     view.zoomAt(factor, anchor); updateView();
   }
+  function relayoutGraph() {
+    cancelInteractions();
+    window.GraphForce.layout(session.graph);
+    previewCache = null;
+    render();
+    announce('Re-laid out the current graph with forces.');
+  }
   function scheduleDraw() {
     if (drawFrame) return;
     drawFrame = requestAnimationFrame(() => { drawFrame = 0; draw(); });
@@ -388,6 +395,7 @@
   $('zoom-in').addEventListener('click', () => zoomBy(1.25));
   $('zoom-out').addEventListener('click', () => zoomBy(1 / 1.25));
   $('fit-view').addEventListener('click', fitView);
+  $('relayout').addEventListener('click', relayoutGraph);
   $('merge-selected').addEventListener('click', () => { const pair = selectedPair(); if (pair) finishMerge(...pair); });
   $('force-layout').addEventListener('change', event => {
     forceLayoutEnabled = event.target.checked;

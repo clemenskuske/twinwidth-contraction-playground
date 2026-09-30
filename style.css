@@ -15,3 +15,4 @@
 .layout-toggle{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;line-height:1.2;white-space:nowrap;cursor:pointer}.layout-toggle input{width:15px;height:15px;margin:0;accent-color:var(--green)}
 @media(max-width:760px){.layout-toggle{font-size:11px}}
 .preview-panel.locked{border-color:#5b9c7a;background:#e2f1e3;box-shadow:inset 3px 0 0 #4d956f}.preview-panel.locked .eyebrow{color:var(--green)}
+.zoom-controls #relayout{font-size:11px;border-left:1px solid var(--line);padding:0 12px}
