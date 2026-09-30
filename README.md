@@ -15,6 +15,17 @@ Then open http://127.0.0.1:8765.
 The current version is published at [clemenskuske.github.io/twinwidth-contraction-playground](https://clemenskuske.github.io/twinwidth-contraction-playground/).
 The GitHub Actions workflow in `.github/workflows/deploy-pages.yml` redeploys the static app automatically after every push to `main`. It can also be started manually from the repository's **Actions** tab.
 
+### Shareable graph links
+
+The page accepts URL parameters so a graph and a starting sequence can be shared in one link:
+
+- `graph=tree|clique|subdivided|custom|customPath` chooses the graph preset. `given` and `path` are accepted aliases for the two supplied graphs.
+- `vertices=15` chooses the tree/clique order. `subdivisions=2` chooses the number of new vertices per edge for a subdivided clique.
+- `relayout=0` or `relayout=1` turns the automatic force-directed relayout after each merge off or on. (`force=0|1` is accepted as an alias.)
+- `sequence=1-2,3-4` applies contractions when the page opens. For the supplied graph, use labels such as `sequence=a-b,c-d`; each label may refer to any original vertex inside a current bag.
+
+For example, [open the supplied graph with two contractions](https://clemenskuske.github.io/twinwidth-contraction-playground/?graph=custom&relayout=1&sequence=a-b,c-d). Query parameters only set the initial state; later changes in the controls work normally.
+
 ## Trying contractions
 
 - Choose a binary tree, clique, subdivided clique, or the supplied graph on vertices a through k. The size input starts a fresh graph where applicable.

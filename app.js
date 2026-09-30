@@ -7,6 +7,8 @@
   const view = new window.GraphViewport();
   const sizes = {tree: 15, clique: 6, subdivided: 5, custom: 11, customPath: 13};
   const names = {tree: 'Binary tree', clique: 'Clique', subdivided: 'Subdivided clique', custom: 'Given graph', customPath: 'Given graph with b–f path'};
+  const limits = {tree: [3, 31], clique: [3, 12], subdivided: [3, 8], custom: [11, 11], customPath: [13, 13]};
+  const query = new URLSearchParams(window.location.search);
   let selection = [], drag = null, hover = null, subdivisions = 1, previewCache = null, previewLocked = false;
   let forceLayoutEnabled = $('force-layout').checked;
   let pan = null, pinch = null;
@@ -15,6 +17,34 @@
   let drawFrame = 0;
   let width = 800, height = 520, radius = 22;
   const announce = text => { $('announcement').textContent = text; };
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+  const queryValue = (...keys) => keys.map(key => query.get(key)).find(value => value !== null);
+  const parseBoolean = (value, fallback) => {
+    if (value === undefined) return fallback;
+    return !['0', 'false', 'off', 'no'].includes(String(value).trim().toLowerCase());
+  };
+  const normalizeKind = value => ({
+    tree: 'tree', 'binary-tree': 'tree',
+    clique: 'clique',
+    subdivided: 'subdivided', 'subdivided-clique': 'subdivided',
+    custom: 'custom', given: 'custom',
+    custompath: 'customPath', path: 'customPath', 'custom-path': 'customPath', 'given-path': 'customPath'
+  }[String(value || '').trim().toLowerCase()] || 'tree');
+  const numericQuery = (value, fallback, min, max) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? clamp(Math.round(number), min, max) : fallback;
+  };
+  const initialUrlConfig = (() => {
+    const kind = normalizeKind(queryValue('graph', 'kind'));
+    const [min, max] = limits[kind];
+    return {
+      kind,
+      size: numericQuery(queryValue('vertices', 'size', 'order'), sizes[kind], min, max),
+      subdivisions: numericQuery(queryValue('subdivisions', 'subdivision', 'subdivisionsPerEdge'), 1, 0, 20),
+      relayout: parseBoolean(queryValue('relayout', 'forceLayout', 'force-layout', 'force'), true),
+      sequence: queryValue('sequence', 'contractions') || ''
+    };
+  })();
   const memberLabel = id => session.graph.labels?.[id] || String(id);
   const memberLabels = members => members.map(memberLabel);
   const membersText = members => { const labels = memberLabels(members); return labels.length <= 3 ? labels.join(', ') : `${labels[0]}, … (${labels.length} vertices)`; };
@@ -241,7 +271,33 @@
     if (!session.forward()) return;
     selection = []; previewLocked = false; render(); announce('Contraction restored.');
   }
-  function start(kind) {
+  function sequenceParts(specification) {
+    return String(specification).split(/[;,]/).map(part => part.trim()).filter(Boolean).map(part => {
+      const values = part.split(/\s*(?:-|:|\+|\s+)\s*/).filter(Boolean);
+      return {raw: part, values};
+    });
+  }
+  function sequenceNode(value) {
+    const text = String(value).trim();
+    const labels = session.graph.labels || {};
+    const labelled = Object.entries(labels).find(([, label]) => String(label).toLowerCase() === text.toLowerCase());
+    const originalId = labelled ? Number(labelled[0]) : /^\d+$/.test(text) ? Number(text) : NaN;
+    return Number.isInteger(originalId) ? session.graph.nodes.find(node => node.members.includes(originalId)) : null;
+  }
+  function applyInitialSequence(specification) {
+    let applied = 0, error = '';
+    for (const part of sequenceParts(specification)) {
+      if (part.values.length !== 2) { error = `Could not read “${part.raw}”; use pairs such as 1-2 or a-b.`; break; }
+      const source = sequenceNode(part.values[0]), target = sequenceNode(part.values[1]);
+      if (!source || !target) { error = `Could not find both vertices in “${part.raw}”.`; break; }
+      if (source.id === target.id) { error = `“${part.raw}” refers to the same current bag twice.`; break; }
+      session.merge(source.id, target.id);
+      if (forceLayoutEnabled) window.GraphForce.layout(session.graph);
+      applied++;
+    }
+    return {applied, error};
+  }
+  function start(kind, options = {}) {
     cancelInteractions(); selection = []; hover = null; previewCache = null; previewLocked = false; lastClick = null; ignoreClick = false;
     session.reset(kind, sizes[kind], subdivisions);
     measure(); separateInitialNodes();
@@ -254,7 +310,15 @@
     $('subdivisions').value = subdivisions;
     document.querySelectorAll('[data-kind]').forEach(button => button.setAttribute('aria-pressed', button.dataset.kind === kind));
     $('family-description').textContent = kind === 'tree' ? `A binary tree on ${sizes[kind]} vertices.` : kind === 'clique' ? `K${sizes[kind]} · every pair of vertices is adjacent.` : kind === 'subdivided' ? `K${sizes[kind]} · ${subdivisions} new ${subdivisions === 1 ? 'vertex' : 'vertices'} per edge · ${subdivisions + 1} edges per path · ${session.initialCount} vertices total.` : kind === 'customPath' ? 'The specified graph plus the path b–l–m–f.' : 'The specified graph on vertices a through k.';
-    render(); announce(`Started ${names[kind].toLowerCase()} with ${session.initialCount} vertices.`);
+    render();
+    if (!options.sequence) {
+      announce(`Started ${names[kind].toLowerCase()} with ${session.initialCount} vertices.`);
+      return;
+    }
+    const result = applyInitialSequence(options.sequence);
+    render();
+    const suffix = result.error ? ` ${result.error}` : '';
+    announce(result.applied ? `Loaded ${result.applied} initial contraction${result.applied === 1 ? '' : 's'}.${suffix}` : `Started ${names[kind].toLowerCase()} with no initial contractions.${suffix}`);
   }
 
   svg.addEventListener('pointerdown', event => {
@@ -429,5 +493,9 @@
     if (!drag && !pan && !pinch) draw();
     else updateView();
   }).observe(area);
-  start('tree');
+  sizes[initialUrlConfig.kind] = initialUrlConfig.size;
+  subdivisions = initialUrlConfig.subdivisions;
+  forceLayoutEnabled = initialUrlConfig.relayout;
+  $('force-layout').checked = forceLayoutEnabled;
+  start(initialUrlConfig.kind, {sequence: initialUrlConfig.sequence});
 })();
