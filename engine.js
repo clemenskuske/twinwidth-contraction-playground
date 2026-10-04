@@ -109,10 +109,32 @@
     return graph;
   }
 
+  function createCandidateGraph(candidate) {
+    const size = Number(candidate.n);
+    if (!Number.isInteger(size) || size < 2 || size > 100 || !Array.isArray(candidate.edges)) throw new Error('Invalid candidate graph.');
+    const graph = {kind: 'candidate', candidateId: candidate.id, size, subdivisions: 0, nodes: [], edges: {}, peak: 0};
+    for (let i = 0; i < size; i++) {
+      const angle = -Math.PI / 2 + 2 * Math.PI * i / size;
+      graph.nodes.push({id: i + 1, x: .5 + .39 * Math.cos(angle), y: .5 + .39 * Math.sin(angle), members: [i + 1]});
+    }
+    for (const pair of candidate.edges) {
+      if (!Array.isArray(pair) || pair.length !== 2) throw new Error('Invalid candidate edge.');
+      const [a, b] = pair.map(Number);
+      if (!Number.isInteger(a) || !Number.isInteger(b) || a < 0 || b <= a || b >= size || graph.edges[key(a + 1, b + 1)]) throw new Error('Invalid candidate edge.');
+      graph.edges[key(a + 1, b + 1)] = BLACK;
+    }
+    return graph;
+  }
+
   class Session {
     constructor(kind = 'tree', size = 15, subdivisions = 1) { this.reset(kind, size, subdivisions); }
     reset(kind, size, subdivisions = 1) {
       this.graph = createGraph(kind, size, subdivisions);
+      this.initialCount = this.graph.nodes.length;
+      this.history = []; this.future = [];
+    }
+    resetCandidate(candidate) {
+      this.graph = createCandidateGraph(candidate);
       this.initialCount = this.graph.nodes.length;
       this.history = []; this.future = [];
     }
@@ -136,7 +158,7 @@
       this.graph = entry.graph; return true;
     }
   }
-  const api = {NONE, BLACK, RED, key, edge, clone, degrees, maxDegree, contract, createGraph, Session};
+  const api = {NONE, BLACK, RED, key, edge, clone, degrees, maxDegree, contract, createGraph, createCandidateGraph, Session};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TwinWidth = api;
 })(typeof window === 'undefined' ? globalThis : window);

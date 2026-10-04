@@ -49,6 +49,18 @@ test('the path variant adds b-l-m-f to the given graph', () => {
   assert.deepEqual(['2:12', '12:13', '6:13'].map(pair => graph.edges[pair]), [T.BLACK, T.BLACK, T.BLACK]);
 });
 
+test('a catalogued zero-based graph loads with one-based vertex labels', () => {
+  const candidate = {id:'G-test', n:4, edges:[[0,1],[1,2],[2,3]]};
+  const session = new T.Session();
+  session.resetCandidate(candidate);
+  assert.equal(session.graph.candidateId, 'G-test');
+  assert.deepEqual(Object.keys(session.graph.edges), ['1:2','2:3','3:4']);
+  session.merge(1, 4);
+  assert.deepEqual(session.graph.nodes.find(node => node.id === 4).members, [1,4]);
+  session.back();
+  assert.equal(session.graph.nodes.length, 4);
+});
+
 test('cliques remain all black for every contraction', () => {
   const session = new T.Session('clique', 12);
   while (session.graph.nodes.length > 1) {

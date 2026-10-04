@@ -2,12 +2,18 @@
   'use strict';
   const T = window.TwinWidth;
   const session = new T.Session('tree', 15);
+  const catalogue = window.TwinWidthCandidates || {graphs: [], inputRecords: 0, isomorphicDuplicatesRemoved: 0};
+  const candidates = catalogue.graphs;
+  const checkedDistance3 = window.TwinWidthDistance3?.catalogueGeneratedAt === catalogue.generatedAt ? window.TwinWidthDistance3.graphs : {};
+  let selectedCandidate = candidates[0] || null;
+  let candidatePage = 0;
+  const pageSize = 24;
   const $ = id => document.getElementById(id);
   const svg = $('graph'), area = $('graph-area');
   const view = new window.GraphViewport();
-  const sizes = {tree: 15, clique: 6, subdivided: 5, custom: 11, customPath: 13};
-  const names = {tree: 'Binary tree', clique: 'Clique', subdivided: 'Subdivided clique', custom: 'Given graph', customPath: 'Given graph with b–f path'};
-  const limits = {tree: [3, 31], clique: [3, 12], subdivided: [3, 8], custom: [11, 11], customPath: [13, 13]};
+  const sizes = {tree: 15, clique: 6, subdivided: 5, custom: 11, customPath: 13, candidate: selectedCandidate?.n || 10};
+  const names = {tree: 'Binary tree', clique: 'Clique', subdivided: 'Subdivided clique', custom: 'Given graph', customPath: 'Given graph with b–f path', candidate: 'Local gap candidate'};
+  const limits = {tree: [3, 31], clique: [3, 12], subdivided: [3, 8], custom: [11, 11], customPath: [13, 13], candidate: [2, 100]};
   const query = new URLSearchParams(window.location.search);
   let selection = [], drag = null, hover = null, subdivisions = 1, previewCache = null, previewLocked = false;
   let forceLayoutEnabled = $('force-layout').checked;
@@ -29,14 +35,17 @@
     clique: 'clique',
     subdivided: 'subdivided', 'subdivided-clique': 'subdivided',
     custom: 'custom', given: 'custom',
-    custompath: 'customPath', path: 'customPath', 'custom-path': 'customPath', 'given-path': 'customPath'
-  }[String(value || '').trim().toLowerCase()] || 'tree');
+    custompath: 'customPath', path: 'customPath', 'custom-path': 'customPath', 'given-path': 'customPath',
+    candidate: 'candidate', candidates: 'candidate', gap: 'candidate'
+  }[String(value || '').trim().toLowerCase()] || (candidates.length ? 'candidate' : 'tree'));
   const numericQuery = (value, fallback, min, max) => {
     const number = Number(value);
     return Number.isFinite(number) ? clamp(Math.round(number), min, max) : fallback;
   };
   const initialUrlConfig = (() => {
     const kind = normalizeKind(queryValue('graph', 'kind'));
+    const requested = candidates.find(candidate => candidate.id.toLowerCase() === String(queryValue('candidate', 'id') || '').toLowerCase());
+    if (requested) selectedCandidate = requested;
     const [min, max] = limits[kind];
     return {
       kind,
@@ -46,6 +55,23 @@
       sequence: queryValue('sequence', 'contractions') || ''
     };
   })();
+  const maskMembers = mask => Array.from({length: selectedCandidate?.n || 0}, (_, i) => i + 1).filter(id => mask & (1 << (id - 1)));
+  const maskText = mask => { const members = maskMembers(mask); return members.length === 1 ? String(members[0]) : `{${members.join(', ')}}`; };
+  const membersMask = members => members.reduce((mask, id) => mask | (1 << (id - 1)), 0);
+  const bagMask = node => membersMask(node.members);
+  const witnessPrefixValid = () => {
+    if (!selectedCandidate || session.graph.kind !== 'candidate' || session.graph.candidateId !== selectedCandidate.id) return false;
+    const masks = new Set(Array.from({length: selectedCandidate.n}, (_, i) => 1 << i));
+    if (session.history.length > selectedCandidate.sequence.length) return false;
+    for (const [index, [a, b]] of selectedCandidate.sequence.slice(0, session.history.length).entries()) {
+      const actual = session.history[index].pair.map(membersMask);
+      if (!((actual[0] === a && actual[1] === b) || (actual[0] === b && actual[1] === a))) return false;
+      if (!masks.has(a) || !masks.has(b)) return false;
+      masks.delete(a); masks.delete(b); masks.add(a | b);
+    }
+    const actual = session.graph.nodes.map(bagMask);
+    return actual.length === masks.size && actual.every(mask => masks.has(mask));
+  };
   const memberLabel = id => session.graph.labels?.[id] || String(id);
   const memberLabels = members => members.map(memberLabel);
   const membersText = members => { const labels = memberLabels(members); return labels.length <= 3 ? labels.join(', ') : `${labels[0]}, … (${labels.length} vertices)`; };
@@ -226,9 +252,160 @@
       else message.innerHTML = '<span class="gesture" aria-hidden="true">○ → ○</span><span>Drag a vertex onto another to merge</span>';
     }
   }
+  function candidateReason(candidate) {
+    const pairs = candidate.remoteMerges.map(move => `${maskText(move.a)} + ${maskText(move.b)} at distance ${move.distance} (step ${move.step})`);
+    const base = `An ordinary width-${candidate.ordinaryWidth} certificate merges ${pairs.join(', ')}`;
+    const category = candidate.category;
+    if (category.widthSafeLocalChoices) return `${base}; ${category.widthSafeLocalChoices} width-${candidate.ordinaryWidth} local move${category.widthSafeLocalChoices === 1 ? '' : 's'} still exist at the first divergence, but exhaustive search proves none can complete a local sequence at that width.`;
+    const best = category.bestLocal;
+    const when = category.divergenceStep === 1 ? 'at the start' : 'after the local prefix';
+    return `${base}; ${when}, even the least damaging allowed merge ${maskText(best.a)} + ${maskText(best.b)} gives ${maskText(best.hub)} red neighbors ${best.redNeighbors.map(maskText).join(', ')} (degree ${best.redDegree} > ${candidate.ordinaryWidth}), and exhaustive search rules out every local width-${candidate.ordinaryWidth} sequence.`;
+  }
+  const distance3Outcome = status => status === 'YES' ? 'possible' : status === 'NO' ? 'impossible' : 'unresolved';
+  function matchesDistance3(candidate, filter) {
+    if (filter === 'all') return true;
+    const check = checkedDistance3[candidate.id];
+    if (!check) return false;
+    if (filter === 'global-yes') return check.status === 'YES';
+    if (filter === 'global-no') return check.status === 'NO';
+    if (filter === 'pair-yes') return check.pairs.some(pair => pair.status === 'YES');
+    return check.pairs.every(pair => pair.status === 'NO');
+  }
+  function renderCandidateDetail() {
+    const active = session.graph.kind === 'candidate' && selectedCandidate;
+    $('candidate-detail').hidden = !active;
+    if (!active) return;
+    const candidate = selectedCandidate;
+    $('candidate-detail-title').textContent = `${candidate.id} · ${candidate.n} vertices, ${candidate.m} edges`;
+    const widths = candidate.localWidth === null ? `Twin-width ${candidate.ordinaryWidth} · distance-2 twin-width ≥ ${candidate.localLowerBound} · gap ≥ ${candidate.localLowerBound - candidate.ordinaryWidth}` : `Twin-width ${candidate.ordinaryWidth} · distance-2 twin-width ${candidate.localWidth} · gap ${candidate.gap}`;
+    $('candidate-widths').textContent = `${widths}\nGraph diameter ${candidate.diameter} · farthest witness merge ${candidate.maxMergeDistance}`;
+    $('candidate-category').textContent = candidate.category.name;
+    $('candidate-detail').dataset.category = candidate.category.name;
+    $('candidate-reason').textContent = candidateReason(candidate);
+    const distance3Result = checkedDistance3[candidate.id];
+    const distance3Panel = $('candidate-distance3-result');
+    distance3Panel.hidden = !distance3Result;
+    if (distance3Result) {
+      const possiblePairs = distance3Result.pairs.filter(pair => pair.status === 'YES').length;
+      const impossiblePairs = distance3Result.pairs.filter(pair => pair.status === 'NO').length;
+      const unresolvedPairs = distance3Result.pairs.length - possiblePairs - impossiblePairs;
+      const summary = document.createElement('p');
+      summary.textContent = `Width-${candidate.ordinaryWidth} sequence with every merge at distance ≤3: ${distance3Outcome(distance3Result.status)}. Exact displayed long-distance pairs at distance 3: ${possiblePairs} possible, ${impossiblePairs} impossible${unresolvedPairs ? `, ${unresolvedPairs} unresolved` : ''}.`;
+      const contents = [summary];
+      if (distance3Result.sequence) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = 'Show all-merges-≤3 sequence';
+        button.addEventListener('click', () => playAlternateSequence(distance3Result.sequence, 'Distance-3 sequence'));
+        contents.push(button);
+      }
+      for (const pair of distance3Result.pairs) {
+        const line = document.createElement('div');
+        line.className = 'distance3-pair';
+        const label = document.createElement('span');
+        label.textContent = `Step ${pair.displayedStep}: ${maskText(pair.a)} + ${maskText(pair.b)} (shown at distance ${pair.displayedDistance}) → distance 3 ${distance3Outcome(pair.status)}`;
+        line.append(label);
+        if (pair.sequence) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.textContent = 'Show sequence';
+          button.addEventListener('click', () => playAlternateSequence(pair.sequence, 'Specific-pair distance-3 sequence'));
+          line.append(button);
+        }
+        contents.push(line);
+      }
+      distance3Panel.replaceChildren(...contents);
+    }
+    const list = $('remote-merges');
+    list.replaceChildren(...candidate.remoteMerges.map(move => {
+      const item = document.createElement('li');
+      item.textContent = `Step ${move.step}: ${maskText(move.a)} + ${maskText(move.b)} · distance ${move.distance}`;
+      return item;
+    }));
+    const valid = witnessPrefixValid();
+    const count = session.history.length;
+    const nextRemote = candidate.remoteMerges.find(move => move.step === count + 1);
+    $('witness-progress').textContent = valid ? `Witness step ${count} of ${candidate.sequence.length}.${nextRemote ? ` Next: ${maskText(nextRemote.a)} + ${maskText(nextRemote.b)} at distance ${nextRemote.distance}, forbidden locally.` : ` Red degree stays ≤ ${candidate.ordinaryWidth}.`}` : 'Your sequence differs from the certificate; playing it will restart this graph.';
+    $('witness-next').disabled = valid && count >= candidate.sequence.length;
+    $('witness-all').disabled = valid && count >= candidate.sequence.length;
+  }
+  function filteredCandidates() {
+    const cluster = $('candidate-cluster').value;
+    const term = $('candidate-search').value.trim().toLowerCase();
+    const minDiameter = Number($('minimum-diameter').value || 0);
+    const minMergeDistance = Number($('minimum-merge-distance').value || 0);
+    const distance3Filter = $('candidate-distance3-filter').value;
+    const sort = $('candidate-sort').value;
+    return candidates.filter(candidate => (cluster === 'all' || candidate.category.name === cluster) &&
+      candidate.diameter >= minDiameter && candidate.maxMergeDistance >= minMergeDistance &&
+      matchesDistance3(candidate, distance3Filter) &&
+      (!term || `${candidate.id} ${candidate.n} ${candidate.m} ${candidate.source} ${candidate.category.name} ${candidate.structuralGroup}`.toLowerCase().includes(term)))
+      .sort((a, b) => window.CandidateCatalogue.compare(a, b, sort));
+  }
+  function sortGroup(candidate) {
+    switch ($('candidate-sort').value) {
+      case 'tww-asc': case 'tww-desc': return `Twin-width ${candidate.ordinaryWidth}`;
+      case 'local-asc': case 'local-desc': return candidate.localWidth === null ? 'Local width unresolved' : `Local twin-width ${candidate.localWidth}`;
+      case 'diameter-desc': case 'diameter-asc': return `Graph diameter ${candidate.diameter}`;
+      case 'merge-desc': case 'merge-asc': return `Farthest witness merge ${candidate.maxMergeDistance}`;
+      default: return candidate.gap === null ? 'Exact local width unresolved' : `Gap ${candidate.gap} · twin-width ${candidate.ordinaryWidth}`;
+    }
+  }
+  function renderGallery() {
+    $('candidate-gallery').hidden = session.graph.kind !== 'candidate';
+    if (session.graph.kind !== 'candidate') return;
+    const matches = filteredCandidates();
+    const pages = Math.max(1, Math.ceil(matches.length / pageSize));
+    candidatePage = Math.min(candidatePage, pages - 1);
+    const startIndex = candidatePage * pageSize;
+    const list = $('candidate-list');
+    const contents = [];
+    let preceding = '';
+    for (const candidate of matches.slice(startIndex, startIndex + pageSize)) {
+      const group = sortGroup(candidate);
+      if (group !== preceding) {
+        const heading = document.createElement('h3');
+        heading.className = 'category-divider';
+        heading.textContent = group;
+        contents.push(heading);
+        preceding = group;
+      }
+      const button = document.createElement('button');
+      button.className = 'candidate-card';
+      button.type = 'button';
+      button.dataset.candidateId = candidate.id;
+      button.setAttribute('aria-current', candidate.id === selectedCandidate?.id ? 'true' : 'false');
+      const title = document.createElement('strong');
+      title.textContent = `${candidate.id} · ${candidate.n} vertices`;
+      const width = document.createElement('span');
+      width.textContent = candidate.localWidth === null ? `tww ${candidate.ordinaryWidth} / local ≥ ${candidate.localLowerBound}` : `gap ${candidate.gap} · tww ${candidate.ordinaryWidth} / local ${candidate.localWidth}`;
+      const distance = document.createElement('span');
+      distance.className = 'candidate-distances';
+      distance.textContent = `diameter ${candidate.diameter} · max merge ${candidate.maxMergeDistance}`;
+      const check = checkedDistance3[candidate.id];
+      const distance3 = document.createElement('small');
+      distance3.className = 'candidate-distance3';
+      if (check) {
+        const yes = check.pairs.filter(pair => pair.status === 'YES').length;
+        const no = check.pairs.filter(pair => pair.status === 'NO').length;
+        const unknown = check.pairs.filter(pair => pair.status === 'UNKNOWN').length;
+        distance3.textContent = `all merges ≤3: ${check.status === 'YES' ? 'yes' : check.status === 'NO' ? 'no' : '?'} · same pair at 3: ${yes} yes, ${no} no${unknown ? `, ${unknown} unresolved` : ''}`;
+      }
+      const meta = document.createElement('small');
+      meta.textContent = `${candidate.category.name} · ${candidate.m} edges · ${candidate.structuralGroup.replace(/^Width \d+ · /, '')}${candidate.isomorphicRecords > 1 ? ` · ${candidate.isomorphicRecords} records` : ''}`;
+      button.append(title, width, distance);
+      if (check) button.append(distance3);
+      button.append(meta);
+      contents.push(button);
+    }
+    list.replaceChildren(...contents);
+    $('candidate-page-status').textContent = `${matches.length} unique graphs · showing ${matches.length ? startIndex + 1 : 0}–${Math.min(matches.length, startIndex + pageSize)} · page ${candidatePage + 1}/${pages}`;
+    $('candidate-prev').disabled = candidatePage === 0;
+    $('candidate-next').disabled = candidatePage >= pages - 1;
+  }
   function render() {
     const g = session.graph, steps = session.history.length;
-    $('graph-title').textContent = names[g.kind].toUpperCase();
+    $('graph-title').textContent = g.kind === 'candidate' ? `GAP CANDIDATE ${selectedCandidate.id}` : names[g.kind].toUpperCase();
     $('graph-meta').textContent = `${g.nodes.length} ${g.nodes.length === 1 ? 'vertex' : 'vertices'} · ${Object.keys(g.edges).length} edges`;
     $('step-count').textContent = `${steps} / ${session.initialCount - 1}`;
     const progress = document.querySelector('.progress-track');
@@ -243,9 +420,11 @@
     $('empty-history').hidden = !!steps;
     $('history-list').innerHTML = session.history.map((entry, i) => {
       const after = i === steps - 1 ? g : session.history[i + 1].graph;
-      return `<li title="Merge ${shortBag(entry.pair[0])} and ${shortBag(entry.pair[1])}"><span class="step-index">${String(i + 1).padStart(2, '0')}</span><span class="pair">${shortBag(entry.pair[0])} + ${shortBag(entry.pair[1])}</span><span class="step-width">Δr ${T.maxDegree(after)}</span></li>`;
+      const remote = g.kind === 'candidate' && witnessPrefixValid() ? selectedCandidate.remoteMerges.find(move => move.step === i + 1) : null;
+      return `<li title="Merge ${shortBag(entry.pair[0])} and ${shortBag(entry.pair[1])}${remote ? ` at distance ${remote.distance}` : ''}"><span class="step-index">${String(i + 1).padStart(2, '0')}</span><span class="pair">${shortBag(entry.pair[0])} + ${shortBag(entry.pair[1])}</span>${remote ? `<span class="remote-flag">d${remote.distance}</span>` : ''}<span class="step-width">Δr ${T.maxDegree(after)}</span></li>`;
     }).reverse().join('');
     $('width-note').textContent = g.nodes.length === 1 ? `This sequence proves twin-width ≤ ${g.peak}.` : 'A completed sequence gives an upper bound on twin-width.';
+    renderCandidateDetail();
     draw();
   }
   function selectNode(id) {
@@ -336,20 +515,24 @@
     return {applied, error};
   }
   function start(kind, options = {}) {
+    if (kind === 'candidate' && !selectedCandidate) kind = 'tree';
     stopForceLayout();
     forceSimulation = null;
     cancelInteractions(); selection = []; hover = null; previewCache = null; previewLocked = false; lastClick = null; ignoreClick = false;
-    session.reset(kind, sizes[kind], subdivisions);
+    if (kind === 'candidate') session.resetCandidate(selectedCandidate);
+    else session.reset(kind, sizes[kind], subdivisions);
     measure(); separateInitialNodes();
     view.fit(session.graph.nodes.map(screen), width, height, radius);
-    const max = kind === 'tree' ? 31 : kind === 'clique' ? 12 : kind === 'subdivided' ? 8 : kind === 'customPath' ? 13 : 11;
+    const max = kind === 'tree' ? 31 : kind === 'clique' ? 12 : kind === 'subdivided' ? 8 : kind === 'customPath' ? 13 : kind === 'candidate' ? selectedCandidate.n : 11;
     $('graph-size').value = sizes[kind]; $('graph-size').max = max; $('graph-size').disabled = kind === 'custom' || kind === 'customPath';
+    $('graph-size').parentElement.hidden = kind === 'candidate';
     $('size-label').textContent = kind === 'subdivided' ? 'Clique order' : 'Vertices';
     $('size-range').textContent = kind === 'custom' ? 'The given graph has 11 vertices labelled a through k.' : kind === 'customPath' ? 'The given graph plus a four-vertex b–f path; vertices are labelled a through m.' : `Between 3 and ${max}. Changing this starts a new graph.`;
     $('subdivisions-control').hidden = kind !== 'subdivided';
     $('subdivisions').value = subdivisions;
     document.querySelectorAll('[data-kind]').forEach(button => button.setAttribute('aria-pressed', button.dataset.kind === kind));
-    $('family-description').textContent = kind === 'tree' ? `A binary tree on ${sizes[kind]} vertices.` : kind === 'clique' ? `K${sizes[kind]} · every pair of vertices is adjacent.` : kind === 'subdivided' ? `K${sizes[kind]} · ${subdivisions} new ${subdivisions === 1 ? 'vertex' : 'vertices'} per edge · ${subdivisions + 1} edges per path · ${session.initialCount} vertices total.` : kind === 'customPath' ? 'The specified graph plus the path b–l–m–f.' : 'The specified graph on vertices a through k.';
+    $('family-description').textContent = kind === 'tree' ? `A binary tree on ${sizes[kind]} vertices.` : kind === 'clique' ? `K${sizes[kind]} · every pair of vertices is adjacent.` : kind === 'subdivided' ? `K${sizes[kind]} · ${subdivisions} new ${subdivisions === 1 ? 'vertex' : 'vertices'} per edge · ${subdivisions + 1} edges per path · ${session.initialCount} vertices total.` : kind === 'customPath' ? 'The specified graph plus the path b–l–m–f.' : kind === 'candidate' ? `${selectedCandidate.category.name} · ${selectedCandidate.structuralGroup} · source ${selectedCandidate.source}.` : 'The specified graph on vertices a through k.';
+    renderGallery();
     render();
     if (!options.sequence) {
       wakeForceLayout();
@@ -512,6 +695,53 @@
     else { stopForceLayout(); forceSimulation = null; }
     announce(forceLayoutEnabled ? 'Live force layout enabled; the graph will settle automatically.' : 'Live force layout paused; the current positions are preserved.');
   });
+  function playWitness(all = false) {
+    if (!selectedCandidate || session.graph.kind !== 'candidate') return;
+    if (!witnessPrefixValid()) start('candidate');
+    const ending = all ? selectedCandidate.sequence.length : Math.min(selectedCandidate.sequence.length, session.history.length + 1);
+    stopForceLayout();
+    for (let step = session.history.length; step < ending; step++) {
+      const [a, b] = selectedCandidate.sequence[step];
+      const source = session.graph.nodes.find(node => bagMask(node) === a);
+      const target = session.graph.nodes.find(node => bagMask(node) === b);
+      if (!source || !target) throw new Error(`Candidate certificate disagrees at step ${step + 1}.`);
+      session.merge(source.id, target.id);
+    }
+    forceSimulation = null; selection = []; previewLocked = false;
+    render(); wakeForceLayout();
+    announce(`Showing witness step ${session.history.length} of ${selectedCandidate.sequence.length}; width so far ${session.graph.peak}.`);
+  }
+  function playAlternateSequence(sequence, label) {
+    if (!selectedCandidate || session.graph.kind !== 'candidate') return;
+    start('candidate');
+    stopForceLayout();
+    for (const [a, b] of sequence) {
+      const source = session.graph.nodes.find(node => bagMask(node) === a);
+      const target = session.graph.nodes.find(node => bagMask(node) === b);
+      if (!source || !target) throw new Error(`${label} disagrees with the graph.`);
+      session.merge(source.id, target.id);
+    }
+    forceSimulation = null; selection = []; previewLocked = false;
+    render(); wakeForceLayout();
+    announce(`${label} complete; width ${session.graph.peak}.`);
+  }
+  $('witness-next').addEventListener('click', () => playWitness(false));
+  $('witness-all').addEventListener('click', () => playWitness(true));
+  $('candidate-list').addEventListener('click', event => {
+    const card = event.target.closest('[data-candidate-id]');
+    if (!card) return;
+    selectedCandidate = candidates.find(candidate => candidate.id === card.dataset.candidateId);
+    start('candidate');
+    document.querySelector('.canvas-panel').scrollIntoView({behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start'});
+  });
+  $('candidate-cluster').addEventListener('change', () => { candidatePage = 0; renderGallery(); });
+  $('candidate-distance3-filter').addEventListener('change', () => { candidatePage = 0; renderGallery(); });
+  $('candidate-sort').addEventListener('change', () => { candidatePage = 0; renderGallery(); });
+  $('minimum-diameter').addEventListener('input', () => { candidatePage = 0; renderGallery(); });
+  $('minimum-merge-distance').addEventListener('input', () => { candidatePage = 0; renderGallery(); });
+  $('candidate-search').addEventListener('input', () => { candidatePage = 0; renderGallery(); });
+  $('candidate-prev').addEventListener('click', () => { candidatePage--; renderGallery(); });
+  $('candidate-next').addEventListener('click', () => { candidatePage++; renderGallery(); });
   $('reset').addEventListener('click', () => start(session.graph.kind));
   document.querySelectorAll('[data-kind]').forEach(button => button.addEventListener('click', () => { if (button.dataset.kind !== session.graph.kind) start(button.dataset.kind); }));
   function applySize() {
@@ -540,6 +770,23 @@
     if (!drag && !pan && !pinch) draw();
     else updateView();
   }).observe(area);
+  const snapshot = catalogue.generatedAt ? `Snapshot ${new Date(catalogue.generatedAt).toLocaleString()}. ` : '';
+  $('candidate-summary').textContent = `${snapshot}${candidates.length} non-isomorphic graphs from ${catalogue.inputRecords} certified records; ${catalogue.isomorphicDuplicatesRemoved} isomorphic duplicates removed. ${catalogue.exactLocalWidths || 0} exact local widths. ${Object.keys(checkedDistance3).length} higher-distance graphs tested for width-optimal distance-3 alternatives; timeouts remain unresolved. Diameter is the greatest original-vertex distance; max merge is the greatest bag distance in the displayed witness, measured just before merging.`;
+  const clusterNames = [...new Set(candidates.map(candidate => candidate.category.name))].sort();
+  for (const name of clusterNames) {
+    const option = document.createElement('option');
+    option.value = name;
+    option.textContent = `${name} (${candidates.filter(candidate => candidate.category.name === name).length})`;
+    $('candidate-cluster').append(option);
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'category-card';
+    const count = candidates.filter(candidate => candidate.category.name === name).length;
+    const description = name === 'Delayed local obstruction' ? 'A width-safe local move exists at the first distant merge, but no complete local sequence exists.' : name === 'Local-prefix dead end' ? 'A local witness prefix reaches a state where every allowed next merge exceeds the ordinary width.' : 'Every allowed first merge already exceeds the ordinary width.';
+    card.innerHTML = `<strong>${count}</strong><span>${name}</span><small>${description}</small>`;
+    card.addEventListener('click', () => { $('candidate-cluster').value = name; candidatePage = 0; renderGallery(); });
+    $('candidate-categories').append(card);
+  }
   sizes[initialUrlConfig.kind] = initialUrlConfig.size;
   subdivisions = initialUrlConfig.subdivisions;
   forceLayoutEnabled = initialUrlConfig.relayout;
