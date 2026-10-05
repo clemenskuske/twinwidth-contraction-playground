@@ -15,6 +15,9 @@
       case 'diameter-asc': primary = a.diameter - b.diameter; break;
       case 'merge-desc': primary = b.maxMergeDistance - a.maxMergeDistance; break;
       case 'merge-asc': primary = a.maxMergeDistance - b.maxMergeDistance; break;
+      case 'core-desc': primary = b.structure.coreOrder - a.structure.coreOrder; break;
+      case 'depth-desc': primary = b.structure.longestPendantDepth - a.structure.longestPendantDepth; break;
+      case 'remote-late': primary = b.remoteMerges[0].step - a.remoteMerges[0].step; break;
     }
     return primary || defaultOrder;
   }

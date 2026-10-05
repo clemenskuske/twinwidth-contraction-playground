@@ -25,9 +25,8 @@ def load_catalogue(path):
 
 
 def result_key(graph):
-    """Reuse a result only when the graph and displayed certificate agree."""
-    return json.dumps([graph["n"], graph["edges"], graph["ordinaryWidth"],
-                       graph["sequence"], graph["remoteMerges"]], separators=(",", ":"))
+    """Distance-3 decisions depend on the labelled graph and width, not its witness."""
+    return json.dumps([graph["n"], graph["edges"], graph["ordinaryWidth"]], separators=(",", ":"))
 
 
 def write_browser_data(catalogue, rows, path):
@@ -111,7 +110,7 @@ def decide(graph, solver, timeout_ms, retry_timeout_ms, target=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--catalogue", type=Path, default=ROOT / "candidates-data.js")
-    parser.add_argument("--solver", type=Path, default=ROOT.parent / "Computations/twinwidth-distance3")
+    parser.add_argument("--solver", type=Path, default=ROOT / "witness-solver")
     parser.add_argument("--output", type=Path, default=ROOT / "distance3-results.jsonl")
     parser.add_argument("--js-output", type=Path, default=ROOT / "distance3-data.js")
     parser.add_argument("--timeout-ms", type=int, default=5000)
@@ -131,13 +130,16 @@ def main():
     reusable = {}
     if args.previous_catalogue:
         old_graphs = {graph["id"]: graph for graph in load_catalogue(args.previous_catalogue)["graphs"]}
+        for graph in old_graphs.values():
+            if graph["maxMergeDistance"] <= 3:
+                reusable[result_key(graph)] = {"status": "YES", "sequence": graph["sequence"],
+                                               "pairChecks": []}
         for line in args.previous_results.read_text().splitlines():
             if not line:
                 continue
             row = json.loads(line)
             graph = old_graphs.get(row["id"])
-            if graph and row["status"] in {"YES", "NO"} and all(
-                    pair["status"] in {"YES", "NO"} for pair in row["pairChecks"]):
+            if graph:
                 reusable[result_key(graph)] = row
     counts = collections.Counter()
     rows = []
@@ -146,26 +148,29 @@ def main():
         for number, graph in enumerate(graphs, 1):
             old = reusable.get(result_key(graph))
             if old is not None:
-                row = dict(old, id=graph["id"])
-                handle.write(json.dumps(row, separators=(",", ":")) + "\n")
-                rows.append(row)
-                counts[row["status"]] += 1
+                status, sequence = old["status"], old.get("sequence", [])
                 reused += 1
-                continue
-            status, sequence = decide(graph, args.solver, args.timeout_ms, args.retry_timeout_ms)
+            else:
+                status, sequence = decide(graph, args.solver, args.timeout_ms, args.retry_timeout_ms)
             row = {"id": graph["id"], "n": graph["n"], "m": graph["m"],
                    "ordinaryWidth": graph["ordinaryWidth"],
                    "displayedMaxDistance": graph["maxMergeDistance"], "status": status}
             if status == "YES":
                 row.update(check_sequence(graph, sequence, distance_cap=3))
                 row["sequence"] = sequence
+            prior_pairs = {tuple(sorted((pair["a"], pair["b"]))): pair
+                           for pair in old.get("pairChecks", [])} if old else {}
             pair_checks = []
             for pair in graph["remoteMerges"]:
                 if pair["distance"] <= 3:
                     continue
                 target = (pair["a"], pair["b"])
-                pair_status, pair_sequence = decide(graph, args.solver, args.timeout_ms,
-                                                     args.retry_timeout_ms, target)
+                prior = prior_pairs.get(tuple(sorted(target)))
+                if prior:
+                    pair_status, pair_sequence = prior["status"], prior.get("sequence", [])
+                else:
+                    pair_status, pair_sequence = decide(graph, args.solver, args.timeout_ms,
+                                                         args.retry_timeout_ms, target)
                 checked_pair = {"a": target[0], "b": target[1],
                                 "displayedStep": pair["step"], "displayedDistance": pair["distance"],
                                 "status": pair_status}

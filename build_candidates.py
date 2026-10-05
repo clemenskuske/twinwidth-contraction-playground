@@ -2,8 +2,8 @@
 """Build the offline candidate catalogue from certified Computations gap files.
 
 Uses only the Python standard library. Isomorphism is checked exactly by
-backtracking inside buckets with the same graph invariants; clusters are a
-simple, reproducible grouping by width, order, and cycle surplus.
+backtracking inside buckets with the same graph invariants. Structural groups
+use the graph's 2-core and its pendant trees.
 """
 import argparse
 import collections
@@ -298,12 +298,72 @@ def exact_local_width(row, adj, solver, timeout_ms):
     raise ValueError("connected graph has no local sequence at width n-1")
 
 
-def structural_group(row):
-    n, m, d = row["n"], row["m"], row["ordinary_width"]
-    order = "small" if n <= 13 else "medium" if n <= 16 else "large"
-    surplus = m - n + 1
-    density = "few cycles" if surplus <= n // 3 else "more cycles"
-    return f"Width {d} · {order} · {density}"
+def structural_features(adj):
+    """Describe the cyclic core and the trees attached to it."""
+    n = len(adj)
+    degree = [bits.bit_count() for bits in adj]
+    queue = collections.deque(v for v in range(n) if degree[v] < 2)
+    core = set(range(n))
+    while queue:
+        v = queue.popleft()
+        if v not in core:
+            continue
+        core.remove(v)
+        for u in range(n):
+            if adj[v] >> u & 1 and u in core:
+                degree[u] -= 1
+                if degree[u] == 1:
+                    queue.append(u)
+    outside = set(range(n)) - core
+    components = []
+    while outside:
+        start = min(outside)
+        component = {start}
+        frontier = [start]
+        outside.remove(start)
+        for v in frontier:
+            for u in range(n):
+                if u in outside and adj[v] >> u & 1:
+                    outside.remove(u)
+                    component.add(u)
+                    frontier.append(u)
+        components.append(component)
+    distances = {v: 0 for v in core}
+    frontier = list(core)
+    for v in frontier:
+        for u in range(n):
+            if adj[v] >> u & 1 and u not in distances:
+                distances[u] = distances[v] + 1
+                frontier.append(u)
+    longest = max(distances.values(), default=0)
+    leaves = sum(bits.bit_count() == 1 for bits in adj)
+    branched = any(adj[v].bit_count() >= 3 for component in components for v in component)
+    if not core:
+        family = "Tree"
+    elif not components:
+        family = "Leafless core"
+    elif branched:
+        family = "Branched pendant tree"
+    elif longest >= 5:
+        family = "Long pendant path"
+    elif longest >= 2:
+        family = "Several short paths" if len(components) > 1 else "Short pendant path"
+    elif leaves == 1:
+        family = "One pendant leaf"
+    elif leaves <= 3:
+        family = "Two or three leaves"
+    else:
+        family = "Four or more leaves"
+    return {"family": family, "coreOrder": len(core), "pendantComponents": len(components),
+            "pendantVertices": n - len(core), "leafCount": leaves,
+            "longestPendantDepth": longest, "coreMask": sum(1 << v for v in core)}
+
+
+def first_distant_pair_type(remote, structure):
+    core = structure["coreMask"]
+    def role(bag):
+        return "core" if bag & core == bag else "pendant" if bag & core == 0 else "mixed"
+    return " + ".join(sorted((role(remote[0]["a"]), role(remote[0]["b"]))))
 
 
 def main():
@@ -325,7 +385,7 @@ def main():
         if content.startswith(prefix):
             for graph in json.loads(content[len(prefix):].rstrip(";\n"))["graphs"]:
                 adj = adjacency(graph["n"], graph["edges"])
-                record = (graph["id"], graph.get("localWidth"), adj)
+                record = (graph["id"], graph.get("localWidth"), adj, graph)
                 previous[(graph["n"], tuple(map(tuple, graph["edges"])))] = record
                 previous_buckets[(graph["n"], graph["m"], invariants(graph["n"], adj))].append(record)
                 next_id = max(next_id, int(graph["id"][1:]) + 1)
@@ -371,6 +431,19 @@ def main():
             candidate_id = old[0] if old is not None else "G" + str(next_id).zfill(3)
             if old is None:
                 next_id += 1
+            if old is not None and old[3].get("edges") == row["edges"] and old[3].get("ordinaryWidth") == row["ordinary_width"]:
+                prior = old[3]
+                if prior.get("witnessOptimization") and prior.get("sequence"):
+                    try:
+                        prior_outcomes = [dict(outcome, ordinary=dict(outcome["ordinary"],
+                            sequence=prior["sequence"])) if outcome["d"] == row["ordinary_width"]
+                            else outcome for outcome in row["outcomes"]]
+                        _, prior_remote = certificate(dict(row, outcomes=prior_outcomes), adj)
+                    except ValueError:
+                        pass
+                    else:
+                        sequence, remote = prior["sequence"], prior_remote
+            structure = structural_features(adj)
             unique.append({
                 "id": candidate_id,
                 "n": row["n"], "m": row["m"], "edges": row["edges"],
@@ -383,7 +456,12 @@ def main():
                 "triangleCount": invariants(row["n"], adj)[1],
                 "cycleSurplus": row["m"] - row["n"] + 1,
                 "category": classify_gap(row, adj, sequence, remote),
-                "structuralGroup": structural_group(row),
+                "structuralGroup": structure["family"],
+                "structure": structure,
+                "firstDistantPairType": first_distant_pair_type(remote, structure),
+                **({"witnessOptimization": prior["witnessOptimization"]} if old is not None and
+                   old[3].get("edges") == row["edges"] and old[3].get("witnessOptimization") and
+                   sequence == old[3].get("sequence") else {}),
                 "sequence": sequence,
                 "remoteMerges": remote,
                 "source": f"{relative}:{number}",
@@ -399,6 +477,12 @@ def main():
               "isomorphicDuplicatesRemoved": duplicates,
               "exactLocalWidths": sum(x["localWidth"] is not None for x in unique),
               "categories": dict(collections.Counter(x["category"]["name"] for x in unique)),
+              "structuralFamilies": dict(collections.Counter(x["structuralGroup"] for x in unique)),
+              "firstDistantPairTypes": dict(collections.Counter(x["firstDistantPairType"] for x in unique)),
+              "witnessOptimizationSummary": {
+                  "improved": sum(x.get("witnessOptimization", {}).get("improved", False) for x in unique),
+                  "delayProved": sum(x.get("witnessOptimization", {}).get("delayStatus") == "proved" for x in unique),
+                  "distanceProved": sum(x.get("witnessOptimization", {}).get("distanceStatus") == "proved" for x in unique)},
               "graphs": unique}
     args.output.write_text("window.TwinWidthCandidates = " +
                            json.dumps(output, separators=(",", ":")) + ";\n")

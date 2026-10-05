@@ -4,7 +4,7 @@ import json
 import random
 import unittest
 
-from build_candidates import DEFAULT_SOURCE, adjacency, certificate, graph_diameter, isomorphic, normalize_gap
+from build_candidates import DEFAULT_SOURCE, adjacency, certificate, first_distant_pair_type, graph_diameter, isomorphic, normalize_gap, structural_features
 
 
 def brute_isomorphic(left, right):
@@ -15,6 +15,17 @@ def brute_isomorphic(left, right):
 
 
 class IsomorphismTests(unittest.TestCase):
+    def test_pendant_structure_distinguishes_path_and_branch(self):
+        triangle = [(0, 1), (0, 2), (1, 2)]
+        path = structural_features(adjacency(6, triangle + [(0, 3), (3, 4), (4, 5)]))
+        branch = structural_features(adjacency(6, triangle + [(0, 3), (3, 4), (3, 5)]))
+        self.assertEqual((path["family"], path["coreOrder"], path["longestPendantDepth"]),
+                         ("Short pendant path", 3, 3))
+        self.assertEqual((branch["family"], branch["coreOrder"], branch["leafCount"]),
+                         ("Branched pendant tree", 3, 2))
+        self.assertEqual(first_distant_pair_type([{"a": 1 << 1, "b": 1 << 5}], path),
+                         "core + pendant")
+
     def test_random_pairs_and_relabelings(self):
         rng = random.Random(20261004)
         n = 6

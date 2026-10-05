@@ -281,6 +281,11 @@
     $('candidate-widths').textContent = `${widths}\nGraph diameter ${candidate.diameter} · farthest witness merge ${candidate.maxMergeDistance}`;
     $('candidate-category').textContent = candidate.category.name;
     $('candidate-detail').dataset.category = candidate.category.name;
+    const structure = candidate.structure;
+    $('candidate-structure').textContent = `${candidate.structuralGroup} · 2-core ${structure.coreOrder} vertices · ${structure.pendantComponents} pendant components · ${structure.leafCount} leaves · longest pendant depth ${structure.longestPendantDepth} · cycle surplus ${candidate.cycleSurplus}. First distant pair: ${candidate.firstDistantPairType}.`;
+    const optimization = candidate.witnessOptimization;
+    const previous = optimization?.improved && optimization.previousFirstDistantStep !== undefined ? ` Previous displayed witness: step ${optimization.previousFirstDistantStep}, farthest distance ${optimization.previousMaxMergeDistance}.` : '';
+    $('candidate-optimization').textContent = optimization ? `First distant merge at step ${optimization.firstDistantStep} of ${candidate.n - 1} (${optimization.delayStatus === 'proved' ? 'latest possible at this width, proved' : 'latest found; search timed out'}). Farthest merge distance ${candidate.maxMergeDistance} (${optimization.distanceStatus === 'proved' ? 'minimum for this local prefix, proved' : 'best found; smaller distance unresolved'}).${previous}` : '';
     $('candidate-reason').textContent = candidateReason(candidate);
     const distance3Result = checkedDistance3[candidate.id];
     const distance3Panel = $('candidate-distance3-result');
@@ -331,13 +336,20 @@
   }
   function filteredCandidates() {
     const cluster = $('candidate-cluster').value;
+    const obstruction = $('candidate-obstruction').value;
+    const pairType = $('candidate-pair-type').value;
     const term = $('candidate-search').value.trim().toLowerCase();
     const minDiameter = Number($('minimum-diameter').value || 0);
     const minMergeDistance = Number($('minimum-merge-distance').value || 0);
+    const minCoreOrder = Number($('minimum-core-order').value || 0);
+    const minPendantDepth = Number($('minimum-pendant-depth').value || 0);
     const distance3Filter = $('candidate-distance3-filter').value;
     const sort = $('candidate-sort').value;
-    return candidates.filter(candidate => (cluster === 'all' || candidate.category.name === cluster) &&
+    return candidates.filter(candidate => (cluster === 'all' || candidate.structuralGroup === cluster) &&
+      (obstruction === 'all' || candidate.category.name === obstruction) &&
+      (pairType === 'all' || candidate.firstDistantPairType === pairType) &&
       candidate.diameter >= minDiameter && candidate.maxMergeDistance >= minMergeDistance &&
+      candidate.structure.coreOrder >= minCoreOrder && candidate.structure.longestPendantDepth >= minPendantDepth &&
       matchesDistance3(candidate, distance3Filter) &&
       (!term || `${candidate.id} ${candidate.n} ${candidate.m} ${candidate.source} ${candidate.category.name} ${candidate.structuralGroup}`.toLowerCase().includes(term)))
       .sort((a, b) => window.CandidateCatalogue.compare(a, b, sort));
@@ -348,6 +360,9 @@
       case 'local-asc': case 'local-desc': return candidate.localWidth === null ? 'Local width unresolved' : `Local twin-width ${candidate.localWidth}`;
       case 'diameter-desc': case 'diameter-asc': return `Graph diameter ${candidate.diameter}`;
       case 'merge-desc': case 'merge-asc': return `Farthest witness merge ${candidate.maxMergeDistance}`;
+      case 'core-desc': return `2-core order ${candidate.structure.coreOrder}`;
+      case 'depth-desc': return `Longest pendant depth ${candidate.structure.longestPendantDepth}`;
+      case 'remote-late': return `First distant merge step ${candidate.remoteMerges[0].step}`;
       default: return candidate.gap === null ? 'Exact local width unresolved' : `Gap ${candidate.gap} · twin-width ${candidate.ordinaryWidth}`;
     }
   }
@@ -381,7 +396,7 @@
       width.textContent = candidate.localWidth === null ? `tww ${candidate.ordinaryWidth} / local ≥ ${candidate.localLowerBound}` : `gap ${candidate.gap} · tww ${candidate.ordinaryWidth} / local ${candidate.localWidth}`;
       const distance = document.createElement('span');
       distance.className = 'candidate-distances';
-      distance.textContent = `diameter ${candidate.diameter} · max merge ${candidate.maxMergeDistance}`;
+      distance.textContent = `diameter ${candidate.diameter} · max merge ${candidate.maxMergeDistance} · first distant step ${candidate.remoteMerges[0].step} (${candidate.witnessOptimization?.delayStatus === 'proved' ? 'latest proved' : 'best found'})`;
       const check = checkedDistance3[candidate.id];
       const distance3 = document.createElement('small');
       distance3.className = 'candidate-distance3';
@@ -392,7 +407,7 @@
         distance3.textContent = `all merges ≤3: ${check.status === 'YES' ? 'yes' : check.status === 'NO' ? 'no' : '?'} · same pair at 3: ${yes} yes, ${no} no${unknown ? `, ${unknown} unresolved` : ''}`;
       }
       const meta = document.createElement('small');
-      meta.textContent = `${candidate.category.name} · ${candidate.m} edges · ${candidate.structuralGroup.replace(/^Width \d+ · /, '')}${candidate.isomorphicRecords > 1 ? ` · ${candidate.isomorphicRecords} records` : ''}`;
+      meta.textContent = `${candidate.structuralGroup} · core ${candidate.structure.coreOrder}, depth ${candidate.structure.longestPendantDepth} · ${candidate.firstDistantPairType} · ${candidate.category.name}${candidate.isomorphicRecords > 1 ? ` · ${candidate.isomorphicRecords} records` : ''}`;
       button.append(title, width, distance);
       if (check) button.append(distance3);
       button.append(meta);
@@ -735,10 +750,14 @@
     document.querySelector('.canvas-panel').scrollIntoView({behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start'});
   });
   $('candidate-cluster').addEventListener('change', () => { candidatePage = 0; renderGallery(); });
+  $('candidate-obstruction').addEventListener('change', () => { candidatePage = 0; renderGallery(); });
+  $('candidate-pair-type').addEventListener('change', () => { candidatePage = 0; renderGallery(); });
   $('candidate-distance3-filter').addEventListener('change', () => { candidatePage = 0; renderGallery(); });
   $('candidate-sort').addEventListener('change', () => { candidatePage = 0; renderGallery(); });
   $('minimum-diameter').addEventListener('input', () => { candidatePage = 0; renderGallery(); });
   $('minimum-merge-distance').addEventListener('input', () => { candidatePage = 0; renderGallery(); });
+  $('minimum-core-order').addEventListener('input', () => { candidatePage = 0; renderGallery(); });
+  $('minimum-pendant-depth').addEventListener('input', () => { candidatePage = 0; renderGallery(); });
   $('candidate-search').addEventListener('input', () => { candidatePage = 0; renderGallery(); });
   $('candidate-prev').addEventListener('click', () => { candidatePage--; renderGallery(); });
   $('candidate-next').addEventListener('click', () => { candidatePage++; renderGallery(); });
@@ -771,21 +790,45 @@
     else updateView();
   }).observe(area);
   const snapshot = catalogue.generatedAt ? `Snapshot ${new Date(catalogue.generatedAt).toLocaleString()}. ` : '';
-  $('candidate-summary').textContent = `${snapshot}${candidates.length} non-isomorphic graphs from ${catalogue.inputRecords} certified records; ${catalogue.isomorphicDuplicatesRemoved} isomorphic duplicates removed. ${catalogue.exactLocalWidths || 0} exact local widths. ${Object.keys(checkedDistance3).length} higher-distance graphs tested for width-optimal distance-3 alternatives; timeouts remain unresolved. Diameter is the greatest original-vertex distance; max merge is the greatest bag distance in the displayed witness, measured just before merging.`;
-  const clusterNames = [...new Set(candidates.map(candidate => candidate.category.name))].sort();
+  const optimized = catalogue.witnessOptimizationSummary || {};
+  $('candidate-summary').textContent = `${snapshot}${candidates.length} non-isomorphic graphs from ${catalogue.inputRecords} certified records; ${catalogue.isomorphicDuplicatesRemoved} isomorphic duplicates removed. ${optimized.improved || 0} witnesses improved; latest first distant merge proved for ${optimized.delayProved || 0}, with time limits shown on the others. Structural groups use the 2-core (vertices remaining after repeated leaf removal) and attached paths or trees. Pair type says whether each bag contains core, pendant, or both kinds of vertices. Diameter measures original vertices; merge distance measures current bags immediately before merging.`;
+  const clusterNames = [...new Set(candidates.map(candidate => candidate.structuralGroup))].sort((a, b) => candidates.filter(candidate => candidate.structuralGroup === b).length - candidates.filter(candidate => candidate.structuralGroup === a).length || a.localeCompare(b));
   for (const name of clusterNames) {
     const option = document.createElement('option');
     option.value = name;
-    option.textContent = `${name} (${candidates.filter(candidate => candidate.category.name === name).length})`;
+    option.textContent = `${name} (${candidates.filter(candidate => candidate.structuralGroup === name).length})`;
     $('candidate-cluster').append(option);
     const card = document.createElement('button');
     card.type = 'button';
     card.className = 'category-card';
-    const count = candidates.filter(candidate => candidate.category.name === name).length;
-    const description = name === 'Delayed local obstruction' ? 'A width-safe local move exists at the first distant merge, but no complete local sequence exists.' : name === 'Local-prefix dead end' ? 'A local witness prefix reaches a state where every allowed next merge exceeds the ordinary width.' : 'Every allowed first merge already exceeds the ordinary width.';
+    const count = candidates.filter(candidate => candidate.structuralGroup === name).length;
+    const descriptions = {
+      'Leafless core': 'Every vertex belongs to the 2-core.',
+      'One pendant leaf': 'One leaf is attached directly to the core.',
+      'Two or three leaves': 'Two or three leaves are attached directly to the core.',
+      'Four or more leaves': 'At least four leaves are attached directly to the core.',
+      'Short pendant path': 'One unbranched attachment extends two to four edges.',
+      'Several short paths': 'Several unbranched attachments, each at most four edges deep.',
+      'Long pendant path': 'An attachment reaches at least five edges from the core.',
+      'Branched pendant tree': 'An attached tree branches away from the core.',
+      'Tree': 'The graph has an empty 2-core.'
+    };
+    const description = descriptions[name] || 'A cyclic core with pendant attachments.';
     card.innerHTML = `<strong>${count}</strong><span>${name}</span><small>${description}</small>`;
     card.addEventListener('click', () => { $('candidate-cluster').value = name; candidatePage = 0; renderGallery(); });
     $('candidate-categories').append(card);
+  }
+  for (const name of [...new Set(candidates.map(candidate => candidate.category.name))].sort()) {
+    const option = document.createElement('option');
+    option.value = name;
+    option.textContent = `${name} (${candidates.filter(candidate => candidate.category.name === name).length})`;
+    $('candidate-obstruction').append(option);
+  }
+  for (const name of [...new Set(candidates.map(candidate => candidate.firstDistantPairType))].sort()) {
+    const option = document.createElement('option');
+    option.value = name;
+    option.textContent = `${name} (${candidates.filter(candidate => candidate.firstDistantPairType === name).length})`;
+    $('candidate-pair-type').append(option);
   }
   sizes[initialUrlConfig.kind] = initialUrlConfig.size;
   subdivisions = initialUrlConfig.subdivisions;

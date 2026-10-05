@@ -20,3 +20,13 @@ test('distance and local-width options sort by their selected measure', () => {
   assert.equal([...rows].sort((a, b) => compare(a, b, 'merge-desc'))[0].id, 'G001');
   assert.equal([...rows].sort((a, b) => compare(a, b, 'local-desc'))[0].id, 'G002');
 });
+
+test('structure and late-merge options use the selected numeric measure', () => {
+  const rows = [
+    {id:'G001', gap:1, ordinaryWidth:2, n:10, m:13, structure:{coreOrder:8, longestPendantDepth:1}, remoteMerges:[{step:2}]},
+    {id:'G002', gap:1, ordinaryWidth:2, n:12, m:15, structure:{coreOrder:6, longestPendantDepth:5}, remoteMerges:[{step:8}]}
+  ];
+  assert.equal([...rows].sort((a,b) => compare(a,b,'core-desc'))[0].id, 'G001');
+  assert.equal([...rows].sort((a,b) => compare(a,b,'depth-desc'))[0].id, 'G002');
+  assert.equal([...rows].sort((a,b) => compare(a,b,'remote-late'))[0].id, 'G002');
+});
