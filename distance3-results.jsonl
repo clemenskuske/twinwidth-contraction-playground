@@ -3065,3 +3065,4 @@
 {"id":"G6083","n":23,"m":40,"ordinaryWidth":3,"displayedMaxDistance":4,"status":"NO","pairChecks":[{"a":65536,"b":3146752,"displayedStep":11,"displayedDistance":4,"status":"NO"}]}
 {"id":"G6112","n":24,"m":41,"ordinaryWidth":3,"displayedMaxDistance":4,"status":"UNKNOWN","pairChecks":[{"a":1,"b":512,"displayedStep":7,"displayedDistance":4,"status":"NO"},{"a":33792,"b":2097152,"displayedStep":13,"displayedDistance":4,"status":"NO"}]}
 {"id":"G6351","n":27,"m":47,"ordinaryWidth":3,"displayedMaxDistance":4,"status":"UNKNOWN","pairChecks":[{"a":16384,"b":262148,"displayedStep":7,"displayedDistance":4,"status":"NO"}]}
+{"id":"G6460","n":30,"m":98,"ordinaryWidth":6,"displayedMaxDistance":4,"status":"UNKNOWN","pairChecks":[{"a":16,"b":2048,"displayedStep":9,"displayedDistance":4,"status":"UNKNOWN"}]}

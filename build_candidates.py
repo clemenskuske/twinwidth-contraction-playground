@@ -25,6 +25,8 @@ GAP_SOURCES = (
     "results_20_30_extension_retries_0/gaps.jsonl",
     "results_20_30_extension_retries_1/gaps.jsonl",
     "results_20_30_extension_retries_2/gaps.jsonl",
+    "results_high_6/gaps.jsonl",
+    "results_high_6_deep_retries/gaps.jsonl",
 )
 
 
@@ -89,6 +91,44 @@ def normalize_gap(row, adj, solver, timeout_ms):
     """Give heuristic-first GAP records the exact-width evidence used by the catalogue."""
     if "ordinary_width" in row:
         return row
+    if "ordinary_exact" in row:
+        d = row["ordinary_exact"]
+        if (d is None or d != row["ordinary_upper"] or
+                row.get("local_exact") != d + 1 or
+                row.get("local_lower_bound") != d + 1 or
+                row.get("local_decision", {}).get("status") != "NO" or
+                len(row.get("ordinary_sequence", [])) != row["n"] - 1):
+            raise ValueError("high-width gap lacks exact ordinary and local evidence")
+        high_proof = row.get("high_width_certificate")
+        if high_proof == "ordinary_width_5_NO":
+            lower_proved = row.get("width_5_decision", {}).get("status") == "NO"
+        elif high_proof == "first_merge_lower":
+            lower_proved = row.get("first_merge_lower", 0) >= 6
+        elif high_proof == "induced_core_width_5_NO":
+            lower_proved = row.get("induced_core_decision", {}).get("status") == "NO"
+        else:
+            lower_proved = False
+        if d < 6 or not lower_proved:
+            raise ValueError("high-width gap lacks a width-five lower-bound certificate")
+        decisions = {x["d"]: x["status"] for x in row.get("ordinary_decisions", [])}
+        if any(decisions.get(bound) != "NO" for bound in range(6, d)):
+            raise ValueError("high-width gap lacks lower ordinary NO decisions")
+        bags = {1 << i for i in range(row["n"])}
+        for step, (a, b) in enumerate(row["local_heuristic"]["sequence"], 1):
+            if a not in bags or b not in bags or a == b or distance(a, b, bags, adj) > 2:
+                raise ValueError(f"invalid width-{d + 1} local witness at step {step}")
+            bags.remove(a); bags.remove(b); bags.add(a | b)
+            if any(sum(relation(x, y, adj) == 2 for y in bags if y != x) > d + 1 for x in bags):
+                raise ValueError(f"local witness exceeds width {d + 1}")
+        if len(bags) != 1:
+            raise ValueError("incomplete high-width local witness")
+        first_lower = min(((adj[a] ^ adj[b]) & ~((1 << a) | (1 << b))).bit_count()
+                          for a in range(row["n"]) for b in range(a + 1, row["n"]))
+        outcomes = [{"d": bound, "ordinary": {"status": "NO", "reason": high_proof}}
+                    for bound in range(first_lower, d)]
+        outcomes.append({"d": d, "ordinary": {"status": "YES", "sequence": row["ordinary_sequence"]},
+                         "local": {"status": "NO"}})
+        return dict(row, ordinary_width=d, lower=first_lower, outcomes=outcomes)
     # Retry records can prove a gap one width below the original heuristic
     # upper bound; tested_width is the bound actually decided YES/NO.
     width = row.get("tested_width", row["ordinary_upper"])
@@ -426,6 +466,8 @@ def main():
                     (row["n"], row["m"], invariants(row["n"], adj))]
                     if isomorphic(adj, record[2])), None)
             local_width = old[1] if old is not None else None
+            if local_width is None and row.get("local_exact") is not None:
+                local_width = row["local_exact"]
             if local_width is None:
                 local_width = exact_local_width(row, adj, args.solver, args.timeout_ms)
             candidate_id = old[0] if old is not None else "G" + str(next_id).zfill(3)
@@ -484,6 +526,12 @@ def main():
                   "delayProved": sum(x.get("witnessOptimization", {}).get("delayStatus") == "proved" for x in unique),
                   "distanceProved": sum(x.get("witnessOptimization", {}).get("distanceStatus") == "proved" for x in unique)},
               "graphs": unique}
+    audit_path = args.source / "results_high_6/gap_two_summary.json"
+    if audit_path.exists():
+        audit = json.loads(audit_path.read_text())
+        output["gapTwoAudit"] = {key: audit[key] for key in
+                                 ("sampled_graphs", "gap_at_least_2_found",
+                                  "gap_at_least_2_unresolved", "scope")}
     args.output.write_text("window.TwinWidthCandidates = " +
                            json.dumps(output, separators=(",", ":")) + ";\n")
     print(f"Wrote {len(unique)} graphs from {output['inputRecords']} certified records; removed {duplicates} isomorphic duplicates.")

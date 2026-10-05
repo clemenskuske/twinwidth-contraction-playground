@@ -150,12 +150,20 @@ def main():
     parser.add_argument("--timeout-ms", type=int, default=500)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--ids", nargs="+", metavar="GRAPH_ID",
+                        help="optimize only these catalogue graph IDs")
     parser.add_argument("--only-unresolved", action="store_true",
                         help="retry only graphs whose delay or distance optimum timed out")
     parser.add_argument("--progress", type=Path, default=ROOT / ".witness-optimization.jsonl")
     args = parser.parse_args()
     catalogue = load_catalogue(args.catalogue)
     graphs = catalogue["graphs"]
+    if args.ids:
+        requested = set(args.ids)
+        unknown = requested - {g["id"] for g in graphs}
+        if unknown:
+            parser.error(f"unknown graph IDs: {', '.join(sorted(unknown))}")
+        graphs = [g for g in graphs if g["id"] in requested]
     if args.only_unresolved:
         graphs = [g for g in graphs if g.get("witnessOptimization", {}).get("delayStatus") != "proved" or
                   g.get("witnessOptimization", {}).get("distanceStatus") != "proved"]

@@ -66,6 +66,15 @@ class IsomorphismTests(unittest.TestCase):
         self.assertEqual(normalized["ordinary_width"], row["tested_width"])
         certificate(normalized, adj)
 
+    def test_high_width_gap_uses_exact_lower_and_local_witness(self):
+        row = json.loads((DEFAULT_SOURCE / "results_high_6/gaps.jsonl").read_text().splitlines()[0])
+        adj = adjacency(row["n"], row["edges"])
+        normalized = normalize_gap(row, adj, DEFAULT_SOURCE / "twinwidth", 1000)
+        self.assertEqual(normalized["ordinary_width"], 6)
+        self.assertEqual(normalized["local_exact"], 7)
+        self.assertEqual(normalized["outcomes"][-2]["ordinary"]["status"], "NO")
+        self.assertTrue(certificate(normalized, adj)[1])
+
 
 if __name__ == "__main__":
     unittest.main()
