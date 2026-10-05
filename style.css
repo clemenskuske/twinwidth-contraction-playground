@@ -45,6 +45,8 @@
 .gallery-footer>div{display:flex;gap:16px}
 .candidate-detail{border:1px solid #c9decd;background:#f3faf2;border-radius:12px;padding:17px;margin-bottom:25px}
 .candidate-detail h2{font-size:15px;margin:7px 0 9px}
+#research-detail label{display:block;font-size:11px;color:var(--muted);margin:12px 0 6px}
+#research-detail select{width:100%;min-width:0;font:inherit;font-size:11px;border:1px solid #c9decd;border-radius:6px;background:var(--paper);padding:8px;color:var(--ink)}
 .candidate-widths{font:11px var(--mono);color:var(--green);line-height:1.6;white-space:pre-line}
 .candidate-category{display:inline-block;margin-top:10px;padding:5px 7px;background:#dfeee1;border-radius:5px;color:#286747;font-size:10px;font-weight:650}
 .candidate-detail p{font-size:11px;line-height:1.65;margin-top:11px;color:#4d6652;overflow-wrap:anywhere}

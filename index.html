@@ -6,14 +6,15 @@
   <meta name="theme-color" content="#f7f8f5">
   <meta name="description" content="Try twin-width contractions by dragging vertices together. Explore trees, cliques, subdivided cliques, and the supplied graph on a through k.">
   <title>Twin-width · Contraction playground</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=20261005-cycles">
   <script src="engine.js?v=20261005-double-star" defer></script>
   <script src="viewport.js" defer></script>
   <script src="force-layout.js?v=2" defer></script>
   <script src="candidates-data.js?v=20261005-high6" defer></script>
   <script src="distance3-data.js?v=20261005-high6" defer></script>
   <script src="catalogue.js?v=20261005-high6" defer></script>
-  <script src="app.js?v=20261005-double-star" defer></script>
+  <script src="research-data.js?v=20261005-cycles" defer></script>
+  <script src="app.js?v=20261005-cycles" defer></script>
 </head>
 <body>
   <main class="app">
@@ -31,6 +32,7 @@
         <button class="graph-option" data-kind="customPath" aria-pressed="false"><svg viewBox="0 0 32 24" aria-hidden="true"><path d="M3 6 10 6 16 12 22 18 29 18M3 6 16 4 29 18"/><g><circle cx="3" cy="6" r="2.2"/><circle cx="10" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="22" cy="18" r="2"/><circle cx="29" cy="18" r="2.2"/></g></svg>With b–f path</button>
         <button class="graph-option" data-kind="doubleStar" aria-pressed="false"><svg viewBox="0 0 32 24" aria-hidden="true"><path d="M11 12H21M11 12 3 4M11 12 3 20M21 12 29 4M21 12 29 20"/><g><circle cx="11" cy="12" r="2.4"/><circle cx="21" cy="12" r="2.4"/><circle cx="3" cy="4" r="2"/><circle cx="3" cy="20" r="2"/><circle cx="29" cy="4" r="2"/><circle cx="29" cy="20" r="2"/></g></svg>Double star</button>
         <button class="graph-option" data-kind="candidate" aria-pressed="false"><svg viewBox="0 0 32 24" aria-hidden="true"><path d="M4 18 11 5 21 8 28 20 16 21 4 18M11 5 16 21M21 8 4 18M21 8 28 20"/><g><circle cx="4" cy="18" r="2"/><circle cx="11" cy="5" r="2"/><circle cx="21" cy="8" r="2"/><circle cx="28" cy="20" r="2"/><circle cx="16" cy="21" r="2"/></g></svg>Gap candidates</button>
+        <button class="graph-option" data-kind="research" aria-pressed="false"><svg viewBox="0 0 32 24" aria-hidden="true"><path d="M16 3 4 21H28ZM16 3 16 13M4 21 16 13 28 21"/><g><circle cx="16" cy="3" r="2"/><circle cx="4" cy="21" r="2"/><circle cx="28" cy="21" r="2"/><circle cx="16" cy="13" r="2"/></g></svg>Cyclic examples</button>
       </div>
       <div class="graph-parameters">
         <div class="size-control"><label id="size-label" for="graph-size">Vertices</label><input id="graph-size" type="number" min="3" max="31" value="15" inputmode="numeric" aria-describedby="size-range"><span id="size-range" class="sr-only">Between 3 and 31 vertices</span></div>
@@ -58,6 +60,18 @@
       </section>
 
       <aside class="sidebar" aria-label="Contraction sequence">
+        <section id="research-detail" class="candidate-detail" hidden>
+          <span class="eyebrow">CYCLIC REPAIR EXAMPLES</span>
+          <label for="research-example">Graph</label>
+          <select id="research-example"></select>
+          <h2 id="research-title"></h2>
+          <div id="research-bounds" class="candidate-widths"></div>
+          <p id="research-description"></p>
+          <label for="research-certificate">Sequence</label>
+          <select id="research-certificate"><option value="ordinary">Ordinary width 3</option><option value="local">Local sequence</option></select>
+          <div class="witness-controls"><button id="research-next">Next merge</button><button id="research-all">Show full sequence</button><button id="research-interaction">Show overlapping products</button></div>
+          <p id="research-progress" class="witness-progress"></p>
+        </section>
         <section id="candidate-detail" class="candidate-detail" hidden><span class="eyebrow">SELECTED CANDIDATE</span><h2 id="candidate-detail-title"></h2><div id="candidate-widths" class="candidate-widths"></div><div id="candidate-category" class="candidate-category"></div><p id="candidate-structure"></p><p id="candidate-optimization"></p><p id="candidate-reason"></p><div id="candidate-distance3-result" class="candidate-distance3-result" hidden></div><div class="witness-controls"><button id="witness-next">Next witness merge</button><button id="witness-all">Show full witness</button></div><p id="witness-progress" class="witness-progress"></p><details><summary>Long-distance merges in the certificate</summary><ol id="remote-merges"></ol></details></section>
         <div class="sequence-heading"><h2>Your sequence</h2><span id="step-count">0 / 14</span></div>
         <div class="progress-track" role="progressbar" aria-label="Contractions completed" aria-valuemin="0" aria-valuemax="14" aria-valuenow="0"><div id="progress-fill"></div></div>

@@ -66,6 +66,24 @@ The GitHub Actions workflow in `.github/workflows/deploy-pages.yml` redeploys th
 
 ### Shareable graph links
 
+The **Cyclic examples** tab contains three research graphs with verified
+ordinary and local sequences. It displays bounds where an optimum remains
+unresolved. Choose a graph and a sequence, then use **Next merge**, **Show full
+sequence**, or **Show overlapping products**. These graphs have their own
+IDs and are not added to the certified gap catalogue.
+
+- [Three overlapping products (23 vertices)](https://clemenskuske.github.io/twinwidth-contraction-playground/?graph=research&example=cyclic-products&step=3)
+- [G484 guards inside the pieces (53 vertices)](https://clemenskuske.github.io/twinwidth-contraction-playground/?graph=research&example=piece-guards&step=33)
+- [Distributed attachments (53 vertices)](https://clemenskuske.github.io/twinwidth-contraction-playground/?graph=research&example=distributed-guards&step=33)
+
+Research links use `graph=research`, `example=ID`, `certificate=ordinary|local`
+(ordinary by default), and `step=N`. Omitting `step` opens the original graph.
+The data comes from `../Computations/history_cycle_23_certificate.json`,
+`cyclic_piece_guard_53_certificate.json`, and
+`cyclic_distributed_guard_53_certificate.json`. Research sequences store
+one-based member arrays rather than 32-bit masks so 53-vertex bags replay
+without truncation.
+
 The page accepts URL parameters so a graph and a starting sequence can be shared in one link:
 
 - `graph=tree|clique|subdivided|custom|customPath|double-star` chooses the graph preset. `given` and `path` are accepted aliases for the two supplied graphs.

@@ -6,14 +6,17 @@
   const candidates = catalogue.graphs;
   const checkedDistance3 = window.TwinWidthDistance3?.catalogueGeneratedAt === catalogue.generatedAt ? window.TwinWidthDistance3.graphs : {};
   let selectedCandidate = candidates[0] || null;
+  const researchExamples = window.TwinWidthResearch || [];
+  let selectedResearch = researchExamples[0] || null;
+  let researchCertificate = 'ordinary';
   let candidatePage = 0;
   const pageSize = 24;
   const $ = id => document.getElementById(id);
   const svg = $('graph'), area = $('graph-area');
   const view = new window.GraphViewport();
-  const sizes = {tree: 15, clique: 6, subdivided: 5, custom: 11, customPath: 13, doubleStar: 6, candidate: selectedCandidate?.n || 10};
-  const names = {tree: 'Binary tree', clique: 'Clique', subdivided: 'Subdivided clique', custom: 'Given graph', customPath: 'Given graph with b–f path', doubleStar: 'Double star', candidate: 'Local gap candidate'};
-  const limits = {tree: [3, 31], clique: [3, 12], subdivided: [3, 8], custom: [11, 11], customPath: [13, 13], doubleStar: [6, 6], candidate: [2, 100]};
+  const sizes = {tree: 15, clique: 6, subdivided: 5, custom: 11, customPath: 13, doubleStar: 6, candidate: selectedCandidate?.n || 10, research: selectedResearch?.n || 23};
+  const names = {tree: 'Binary tree', clique: 'Clique', subdivided: 'Subdivided clique', custom: 'Given graph', customPath: 'Given graph with b–f path', doubleStar: 'Double star', candidate: 'Local gap candidate', research: 'Cyclic repair example'};
+  const limits = {tree: [3, 31], clique: [3, 12], subdivided: [3, 8], custom: [11, 11], customPath: [13, 13], doubleStar: [6, 6], candidate: [2, 100], research: [2, 100]};
   const query = new URLSearchParams(window.location.search);
   let selection = [], drag = null, hover = null, subdivisions = 1, previewCache = null, previewLocked = false;
   let forceLayoutEnabled = $('force-layout').checked;
@@ -37,6 +40,7 @@
     custom: 'custom', given: 'custom',
     custompath: 'customPath', path: 'customPath', 'custom-path': 'customPath', 'given-path': 'customPath',
     candidate: 'candidate', candidates: 'candidate', gap: 'candidate',
+    research: 'research', cyclic: 'research',
     doublestar: 'doubleStar', 'double-star': 'doubleStar'
   }[String(value || '').trim().toLowerCase()] || (candidates.length ? 'candidate' : 'tree'));
   const numericQuery = (value, fallback, min, max) => {
@@ -47,13 +51,18 @@
     const kind = normalizeKind(queryValue('graph', 'kind'));
     const requested = candidates.find(candidate => candidate.id.toLowerCase() === String(queryValue('candidate', 'id') || '').toLowerCase());
     if (requested) selectedCandidate = requested;
+    const research = researchExamples.find(example => example.id === queryValue('example'));
+    if (research) selectedResearch = research;
+    researchCertificate = queryValue('certificate') === 'local' ? 'local' : 'ordinary';
+    const researchStep = numericQuery(queryValue('step'), 0, 0, (selectedResearch?.n || 1) - 1);
+    const researchSequence = kind === 'research' && selectedResearch ? selectedResearch[researchCertificate].sequence.slice(0, researchStep).map(([a,b]) => `${a[0]}-${b[0]}`).join(',') : '';
     const [min, max] = limits[kind];
     return {
       kind,
       size: numericQuery(queryValue('vertices', 'size', 'order'), sizes[kind], min, max),
       subdivisions: numericQuery(queryValue('subdivisions', 'subdivision', 'subdivisionsPerEdge'), 1, 0, 20),
       relayout: parseBoolean(queryValue('relayout', 'forceLayout', 'force-layout', 'force'), true),
-      sequence: queryValue('sequence', 'contractions') || ''
+      sequence: queryValue('sequence', 'contractions') || researchSequence
     };
   })();
   const maskMembers = mask => Array.from({length: selectedCandidate?.n || 0}, (_, i) => i + 1).filter(id => mask & (1 << (id - 1)));
@@ -421,7 +430,7 @@
   }
   function render() {
     const g = session.graph, steps = session.history.length;
-    $('graph-title').textContent = g.kind === 'candidate' ? `GAP CANDIDATE ${selectedCandidate.id}` : names[g.kind].toUpperCase();
+    $('graph-title').textContent = g.kind === 'candidate' ? `GAP CANDIDATE ${selectedCandidate.id}` : g.kind === 'research' ? selectedResearch.title.toUpperCase() : names[g.kind].toUpperCase();
     $('graph-meta').textContent = `${g.nodes.length} ${g.nodes.length === 1 ? 'vertex' : 'vertices'} · ${Object.keys(g.edges).length} edges`;
     $('step-count').textContent = `${steps} / ${session.initialCount - 1}`;
     const progress = document.querySelector('.progress-track');
@@ -441,6 +450,7 @@
     }).reverse().join('');
     $('width-note').textContent = g.nodes.length === 1 ? `This sequence proves twin-width ≤ ${g.peak}.` : 'A completed sequence gives an upper bound on twin-width.';
     renderCandidateDetail();
+    renderResearchDetail();
     draw();
   }
   function selectNode(id) {
@@ -532,22 +542,29 @@
   }
   function start(kind, options = {}) {
     if (kind === 'candidate' && !selectedCandidate) kind = 'tree';
+    if (kind === 'research' && !selectedResearch) kind = 'tree';
     stopForceLayout();
     forceSimulation = null;
     cancelInteractions(); selection = []; hover = null; previewCache = null; previewLocked = false; lastClick = null; ignoreClick = false;
     if (kind === 'candidate') session.resetCandidate(selectedCandidate);
+    else if (kind === 'research') {
+      session.resetCandidate(selectedResearch);
+      session.graph.kind = 'research';
+      session.graph.researchId = selectedResearch.id;
+    }
     else session.reset(kind, sizes[kind], subdivisions);
     measure(); separateInitialNodes();
     view.fit(session.graph.nodes.map(screen), width, height, radius);
     const max = kind === 'candidate' ? selectedCandidate.n : limits[kind][1];
     $('graph-size').value = sizes[kind]; $('graph-size').max = max; $('graph-size').disabled = kind === 'custom' || kind === 'customPath' || kind === 'doubleStar';
-    $('graph-size').parentElement.hidden = kind === 'candidate';
+    $('graph-size').parentElement.hidden = kind === 'candidate' || kind === 'research';
     $('size-label').textContent = kind === 'subdivided' ? 'Clique order' : 'Vertices';
     $('size-range').textContent = kind === 'doubleStar' ? 'The double star has six vertices: leaves 3,5 at anchor 1 and leaves 4,6 at anchor 2.' : kind === 'custom' ? 'The given graph has 11 vertices labelled a through k.' : kind === 'customPath' ? 'The given graph plus a four-vertex b–f path; vertices are labelled a through m.' : `Between 3 and ${max}. Changing this starts a new graph.`;
     $('subdivisions-control').hidden = kind !== 'subdivided';
     $('subdivisions').value = subdivisions;
     document.querySelectorAll('[data-kind]').forEach(button => button.setAttribute('aria-pressed', button.dataset.kind === kind));
     $('family-description').textContent = kind === 'doubleStar' ? 'Leaves 3,5 at anchor 1; leaves 4,6 at anchor 2. Both widths are 1. Postponing the distant pairs 3–4 and 5–6 before merging 1–2 creates red degree 4.' : kind === 'tree' ? `A binary tree on ${sizes[kind]} vertices.` : kind === 'clique' ? `K${sizes[kind]} · every pair of vertices is adjacent.` : kind === 'subdivided' ? `K${sizes[kind]} · ${subdivisions} new ${subdivisions === 1 ? 'vertex' : 'vertices'} per edge · ${subdivisions + 1} edges per path · ${session.initialCount} vertices total.` : kind === 'customPath' ? 'The specified graph plus the path b–l–m–f.' : kind === 'candidate' ? `${selectedCandidate.category.name} · ${selectedCandidate.structuralGroup} · source ${selectedCandidate.source}.` : 'The specified graph on vertices a through k.';
+    if (kind === 'research') $('family-description').textContent = selectedResearch.description;
     renderGallery();
     render();
     if (!options.sequence) {
@@ -711,6 +728,59 @@
     else { stopForceLayout(); forceSimulation = null; }
     announce(forceLayoutEnabled ? 'Live force layout enabled; the graph will settle automatically.' : 'Live force layout paused; the current positions are preserved.');
   });
+  const sameMembers = (a,b) => a.join(',') === b.join(',');
+  function researchPrefixValid() {
+    if (session.graph.kind !== 'research' || session.graph.researchId !== selectedResearch?.id) return false;
+    const sequence = selectedResearch[researchCertificate].sequence;
+    return session.history.length <= sequence.length && session.history.every((entry, step) => {
+      const [a,b] = entry.pair, [u,v] = sequence[step];
+      return (sameMembers(a,u) && sameMembers(b,v)) || (sameMembers(a,v) && sameMembers(b,u));
+    });
+  }
+  function renderResearchDetail() {
+    const active = session.graph.kind === 'research';
+    $('research-detail').hidden = !active;
+    if (!active) return;
+    const example = selectedResearch, certificate = example[researchCertificate];
+    $('research-example').value = example.id;
+    $('research-certificate').value = researchCertificate;
+    $('research-title').textContent = `${example.n} vertices · ${example.m} edges`;
+    $('research-bounds').textContent = example.bounds;
+    $('research-description').textContent = `${example.description} Vertex labels in this app start at 1.`;
+    $('research-certificate').options[1].textContent = `Local width ${example.local.width}`;
+    const valid = researchPrefixValid(), count = session.history.length;
+    $('research-progress').textContent = valid ? `${researchCertificate === 'ordinary' ? 'Ordinary' : 'Local'} sequence: step ${count} of ${certificate.sequence.length} · certified width ${certificate.width}.` : 'Your sequence differs from this certificate; replay will restart the graph.';
+    $('research-next').disabled = $('research-all').disabled = valid && count === certificate.sequence.length;
+  }
+  function playResearch(ending) {
+    if (!selectedResearch || session.graph.kind !== 'research') return;
+    if (!researchPrefixValid() || session.history.length > ending) start('research');
+    stopForceLayout();
+    const sequence = selectedResearch[researchCertificate].sequence;
+    for (let step = session.history.length; step < ending; step++) {
+      const [a,b] = sequence[step];
+      const source = session.graph.nodes.find(node => sameMembers(node.members,a));
+      const target = session.graph.nodes.find(node => sameMembers(node.members,b));
+      if (!source || !target) throw new Error(`Research certificate disagrees at step ${step+1}.`);
+      session.merge(source.id,target.id);
+    }
+    forceSimulation = null; selection = []; previewLocked = false;
+    render(); fitView(); wakeForceLayout();
+    announce(`Showing ${selectedResearch.title}, ${researchCertificate} step ${ending}; width so far ${session.graph.peak}.`);
+  }
+  for (const example of researchExamples) {
+    const option = document.createElement('option');
+    option.value = example.id; option.textContent = `${example.title} (${example.n} vertices)`;
+    $('research-example').append(option);
+  }
+  $('research-example').addEventListener('change', () => {
+    selectedResearch = researchExamples.find(example => example.id === $('research-example').value);
+    start('research');
+  });
+  $('research-certificate').addEventListener('change', () => { researchCertificate = $('research-certificate').value; start('research'); });
+  $('research-next').addEventListener('click', () => playResearch(Math.min(selectedResearch[researchCertificate].sequence.length, (researchPrefixValid() ? session.history.length : 0) + 1)));
+  $('research-all').addEventListener('click', () => playResearch(selectedResearch[researchCertificate].sequence.length));
+  $('research-interaction').addEventListener('click', () => { researchCertificate = 'ordinary'; start('research'); playResearch(selectedResearch.interactionStep); });
   function playWitness(all = false) {
     if (!selectedCandidate || session.graph.kind !== 'candidate') return;
     if (!witnessPrefixValid()) start('candidate');
