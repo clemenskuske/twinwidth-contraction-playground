@@ -46,6 +46,15 @@ class IsomorphismTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "local NO"):
             normalize_gap(row, adjacency(row["n"], row["edges"]), DEFAULT_SOURCE / "twinwidth", 1000)
 
+    def test_retry_gap_uses_tested_width_below_heuristic_upper(self):
+        with (DEFAULT_SOURCE / "results_20_30_retries_1/gaps.jsonl").open() as handle:
+            row = next(row for line in handle if
+                       (row := json.loads(line))["tested_width"] < row["ordinary_upper"])
+        adj = adjacency(row["n"], row["edges"])
+        normalized = normalize_gap(row, adj, DEFAULT_SOURCE / "twinwidth", 1000)
+        self.assertEqual(normalized["ordinary_width"], row["tested_width"])
+        certificate(normalized, adj)
+
 
 if __name__ == "__main__":
     unittest.main()

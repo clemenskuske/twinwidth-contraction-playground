@@ -20,6 +20,11 @@ GAP_SOURCES = (
     "pilot_mid_verified/gaps.jsonl", "pilot_mid_retries/gaps.jsonl",
     "results_20_30/gaps.jsonl", "results_20_30_retries/gaps.jsonl",
     "results_20_30_retries_1/gaps.jsonl", "results_20_30_retries_2/gaps.jsonl",
+    "pilot_extension_smoke_retries_2/gaps.jsonl",
+    "results_20_30_extension/gaps.jsonl",
+    "results_20_30_extension_retries_0/gaps.jsonl",
+    "results_20_30_extension_retries_1/gaps.jsonl",
+    "results_20_30_extension_retries_2/gaps.jsonl",
 )
 
 
@@ -84,7 +89,9 @@ def normalize_gap(row, adj, solver, timeout_ms):
     """Give heuristic-first GAP records the exact-width evidence used by the catalogue."""
     if "ordinary_width" in row:
         return row
-    width = row["ordinary_upper"]
+    # Retry records can prove a gap one width below the original heuristic
+    # upper bound; tested_width is the bound actually decided YES/NO.
+    width = row.get("tested_width", row["ordinary_upper"])
     if (row.get("local_lower_bound") != width + 1 or
             row.get("local_decision", {}).get("status") != "NO" or
             row.get("ordinary_sequence_verified") is not True):
