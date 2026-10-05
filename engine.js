@@ -43,7 +43,7 @@
   }
 
   function createGraph(kind, size, subdivisions = 1) {
-    const limits = kind === 'tree' ? [3, 31] : kind === 'clique' ? [3, 12] : kind === 'subdivided' ? [3, 8] : kind === 'customPath' ? [13, 13] : [11, 11];
+    const limits = kind === 'tree' ? [3, 31] : kind === 'clique' ? [3, 12] : kind === 'subdivided' ? [3, 8] : kind === 'doubleStar' ? [6, 6] : kind === 'customPath' ? [13, 13] : [11, 11];
     size = Math.max(limits[0], Math.min(limits[1], Math.round(Number(size) || limits[0])));
     subdivisions = Math.max(0, Math.min(20, Math.round(Number(subdivisions) || 0)));
     const graph = {kind, size, subdivisions, nodes: [], edges: {}, peak: 0};
@@ -71,6 +71,9 @@
         add(x[id], .08 + .84 * Math.floor(Math.log2(id)) / depth);
         if (id > 1) connect(Math.floor(id / 2), id);
       }
+    } else if (kind === 'doubleStar') {
+      [[.35,.5],[.65,.5],[.15,.25],[.85,.25],[.15,.75],[.85,.75]].forEach(([x,y]) => add(x,y));
+      for (const [a,b] of [[1,2],[1,3],[2,4],[1,5],[2,6]]) connect(a,b);
     } else if (kind === 'custom' || kind === 'customPath') {
       const labels = kind === 'customPath' ? [...'abcdefghijklm'] : [...'abcdefghijk'];
       const coordinates = [

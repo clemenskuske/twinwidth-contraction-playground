@@ -11,9 +11,9 @@
   const $ = id => document.getElementById(id);
   const svg = $('graph'), area = $('graph-area');
   const view = new window.GraphViewport();
-  const sizes = {tree: 15, clique: 6, subdivided: 5, custom: 11, customPath: 13, candidate: selectedCandidate?.n || 10};
-  const names = {tree: 'Binary tree', clique: 'Clique', subdivided: 'Subdivided clique', custom: 'Given graph', customPath: 'Given graph with b–f path', candidate: 'Local gap candidate'};
-  const limits = {tree: [3, 31], clique: [3, 12], subdivided: [3, 8], custom: [11, 11], customPath: [13, 13], candidate: [2, 100]};
+  const sizes = {tree: 15, clique: 6, subdivided: 5, custom: 11, customPath: 13, doubleStar: 6, candidate: selectedCandidate?.n || 10};
+  const names = {tree: 'Binary tree', clique: 'Clique', subdivided: 'Subdivided clique', custom: 'Given graph', customPath: 'Given graph with b–f path', doubleStar: 'Double star', candidate: 'Local gap candidate'};
+  const limits = {tree: [3, 31], clique: [3, 12], subdivided: [3, 8], custom: [11, 11], customPath: [13, 13], doubleStar: [6, 6], candidate: [2, 100]};
   const query = new URLSearchParams(window.location.search);
   let selection = [], drag = null, hover = null, subdivisions = 1, previewCache = null, previewLocked = false;
   let forceLayoutEnabled = $('force-layout').checked;
@@ -36,7 +36,8 @@
     subdivided: 'subdivided', 'subdivided-clique': 'subdivided',
     custom: 'custom', given: 'custom',
     custompath: 'customPath', path: 'customPath', 'custom-path': 'customPath', 'given-path': 'customPath',
-    candidate: 'candidate', candidates: 'candidate', gap: 'candidate'
+    candidate: 'candidate', candidates: 'candidate', gap: 'candidate',
+    doublestar: 'doubleStar', 'double-star': 'doubleStar'
   }[String(value || '').trim().toLowerCase()] || (candidates.length ? 'candidate' : 'tree'));
   const numericQuery = (value, fallback, min, max) => {
     const number = Number(value);
@@ -538,15 +539,15 @@
     else session.reset(kind, sizes[kind], subdivisions);
     measure(); separateInitialNodes();
     view.fit(session.graph.nodes.map(screen), width, height, radius);
-    const max = kind === 'tree' ? 31 : kind === 'clique' ? 12 : kind === 'subdivided' ? 8 : kind === 'customPath' ? 13 : kind === 'candidate' ? selectedCandidate.n : 11;
-    $('graph-size').value = sizes[kind]; $('graph-size').max = max; $('graph-size').disabled = kind === 'custom' || kind === 'customPath';
+    const max = kind === 'candidate' ? selectedCandidate.n : limits[kind][1];
+    $('graph-size').value = sizes[kind]; $('graph-size').max = max; $('graph-size').disabled = kind === 'custom' || kind === 'customPath' || kind === 'doubleStar';
     $('graph-size').parentElement.hidden = kind === 'candidate';
     $('size-label').textContent = kind === 'subdivided' ? 'Clique order' : 'Vertices';
-    $('size-range').textContent = kind === 'custom' ? 'The given graph has 11 vertices labelled a through k.' : kind === 'customPath' ? 'The given graph plus a four-vertex b–f path; vertices are labelled a through m.' : `Between 3 and ${max}. Changing this starts a new graph.`;
+    $('size-range').textContent = kind === 'doubleStar' ? 'The double star has six vertices: leaves 3,5 at anchor 1 and leaves 4,6 at anchor 2.' : kind === 'custom' ? 'The given graph has 11 vertices labelled a through k.' : kind === 'customPath' ? 'The given graph plus a four-vertex b–f path; vertices are labelled a through m.' : `Between 3 and ${max}. Changing this starts a new graph.`;
     $('subdivisions-control').hidden = kind !== 'subdivided';
     $('subdivisions').value = subdivisions;
     document.querySelectorAll('[data-kind]').forEach(button => button.setAttribute('aria-pressed', button.dataset.kind === kind));
-    $('family-description').textContent = kind === 'tree' ? `A binary tree on ${sizes[kind]} vertices.` : kind === 'clique' ? `K${sizes[kind]} · every pair of vertices is adjacent.` : kind === 'subdivided' ? `K${sizes[kind]} · ${subdivisions} new ${subdivisions === 1 ? 'vertex' : 'vertices'} per edge · ${subdivisions + 1} edges per path · ${session.initialCount} vertices total.` : kind === 'customPath' ? 'The specified graph plus the path b–l–m–f.' : kind === 'candidate' ? `${selectedCandidate.category.name} · ${selectedCandidate.structuralGroup} · source ${selectedCandidate.source}.` : 'The specified graph on vertices a through k.';
+    $('family-description').textContent = kind === 'doubleStar' ? 'Leaves 3,5 at anchor 1; leaves 4,6 at anchor 2. Both widths are 1. Postponing the distant pairs 3–4 and 5–6 before merging 1–2 creates red degree 4.' : kind === 'tree' ? `A binary tree on ${sizes[kind]} vertices.` : kind === 'clique' ? `K${sizes[kind]} · every pair of vertices is adjacent.` : kind === 'subdivided' ? `K${sizes[kind]} · ${subdivisions} new ${subdivisions === 1 ? 'vertex' : 'vertices'} per edge · ${subdivisions + 1} edges per path · ${session.initialCount} vertices total.` : kind === 'customPath' ? 'The specified graph plus the path b–l–m–f.' : kind === 'candidate' ? `${selectedCandidate.category.name} · ${selectedCandidate.structuralGroup} · source ${selectedCandidate.source}.` : 'The specified graph on vertices a through k.';
     renderGallery();
     render();
     if (!options.sequence) {

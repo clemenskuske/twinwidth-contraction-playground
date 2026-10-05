@@ -68,7 +68,7 @@ The GitHub Actions workflow in `.github/workflows/deploy-pages.yml` redeploys th
 
 The page accepts URL parameters so a graph and a starting sequence can be shared in one link:
 
-- `graph=tree|clique|subdivided|custom|customPath` chooses the graph preset. `given` and `path` are accepted aliases for the two supplied graphs.
+- `graph=tree|clique|subdivided|custom|customPath|double-star` chooses the graph preset. `given` and `path` are accepted aliases for the two supplied graphs.
 - `vertices=15` chooses the tree/clique order. `subdivisions=2` chooses the number of new vertices per edge for a subdivided clique.
 - `relayout=0` or `relayout=1` pauses or enables the live force-directed layout. (`force=0|1` is accepted as an alias.)
 - `sequence=1-2,3-4` applies contractions when the page opens. For the supplied graph, use labels such as `sequence=a-b,c-d`; each label may refer to any original vertex inside a current bag.
@@ -102,3 +102,11 @@ Reference: Bonnet, Kim, Thomassé, and Watrigant, [Twin-width I: tractable FO mo
 `engine.js` contains the pure graph operations and undo/redo session; `force-layout.js` contains the deterministic damped force simulation; `viewport.js` handles camera geometry; `app.js` handles pointer, keyboard, and animation interaction; `style.css` provides the responsive layout.
 
 Run correctness checks with `node --test *.test.cjs`.
+
+## Postponement failure control
+
+The six-vertex [double star](https://clemenskuske.github.io/twinwidth-contraction-playground/?graph=double-star) has anchors 1,2, leaves 3,5 at 1, and leaves 4,6 at 2. It has ordinary and distance-2 local twin-width one, so it is a control for the transformation, not a graph with a parameter gap.
+
+- [Ordinary width-two reference sequence](https://clemenskuske.github.io/twinwidth-contraction-playground/?graph=double-star&sequence=3-4,5-6,1-2,3-5,1-3): first merge the two distant leaf pairs, then the anchors.
+- [Failing state after postponing both distant pairs](https://clemenskuske.github.io/twinwidth-contraction-playground/?graph=double-star&sequence=1-2): the merged anchor has four red neighbors, exceeding the original reference budget 2+1.
+- [Successful local width-one sequence](https://clemenskuske.github.io/twinwidth-contraction-playground/?graph=double-star&sequence=3-5,4-6,1-3,2-4,1-2): regroup the leaves at their common anchors before absorbing them. Use Back to inspect its intermediate states.

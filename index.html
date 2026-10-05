@@ -7,13 +7,13 @@
   <meta name="description" content="Try twin-width contractions by dragging vertices together. Explore trees, cliques, subdivided cliques, and the supplied graph on a through k.">
   <title>Twin-width · Contraction playground</title>
   <link rel="stylesheet" href="style.css">
-  <script src="engine.js" defer></script>
+  <script src="engine.js?v=20261005-double-star" defer></script>
   <script src="viewport.js" defer></script>
   <script src="force-layout.js?v=2" defer></script>
   <script src="candidates-data.js?v=20261005-high6" defer></script>
   <script src="distance3-data.js?v=20261005-high6" defer></script>
   <script src="catalogue.js?v=20261005-high6" defer></script>
-  <script src="app.js?v=20261005-high6" defer></script>
+  <script src="app.js?v=20261005-double-star" defer></script>
 </head>
 <body>
   <main class="app">
@@ -29,6 +29,7 @@
         <button class="graph-option" data-kind="subdivided" aria-pressed="false"><svg viewBox="0 0 32 24" aria-hidden="true"><path d="M16 3 3 21H29Z"/><g><circle cx="16" cy="3" r="2.6"/><circle cx="3" cy="21" r="2.6"/><circle cx="29" cy="21" r="2.6"/><circle cx="9.5" cy="12" r="2"/><circle cx="22.5" cy="12" r="2"/><circle cx="16" cy="21" r="2"/></g></svg>Subdivided clique</button>
         <button class="graph-option" data-kind="custom" aria-pressed="false"><svg viewBox="0 0 32 24" aria-hidden="true"><path d="M4 5 12 3 20 6 28 4M4 5 7 18 15 13 20 6M7 18 16 21 28 4M15 13 28 19 28 4"/><g><circle cx="4" cy="5" r="2"/><circle cx="12" cy="3" r="2"/><circle cx="20" cy="6" r="2"/><circle cx="28" cy="4" r="2"/><circle cx="7" cy="18" r="2"/><circle cx="15" cy="13" r="2"/><circle cx="16" cy="21" r="2"/><circle cx="28" cy="19" r="2"/></g></svg>Given graph</button>
         <button class="graph-option" data-kind="customPath" aria-pressed="false"><svg viewBox="0 0 32 24" aria-hidden="true"><path d="M3 6 10 6 16 12 22 18 29 18M3 6 16 4 29 18"/><g><circle cx="3" cy="6" r="2.2"/><circle cx="10" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="22" cy="18" r="2"/><circle cx="29" cy="18" r="2.2"/></g></svg>With b–f path</button>
+        <button class="graph-option" data-kind="doubleStar" aria-pressed="false"><svg viewBox="0 0 32 24" aria-hidden="true"><path d="M11 12H21M11 12 3 4M11 12 3 20M21 12 29 4M21 12 29 20"/><g><circle cx="11" cy="12" r="2.4"/><circle cx="21" cy="12" r="2.4"/><circle cx="3" cy="4" r="2"/><circle cx="3" cy="20" r="2"/><circle cx="29" cy="4" r="2"/><circle cx="29" cy="20" r="2"/></g></svg>Double star</button>
         <button class="graph-option" data-kind="candidate" aria-pressed="false"><svg viewBox="0 0 32 24" aria-hidden="true"><path d="M4 18 11 5 21 8 28 20 16 21 4 18M11 5 16 21M21 8 4 18M21 8 28 20"/><g><circle cx="4" cy="18" r="2"/><circle cx="11" cy="5" r="2"/><circle cx="21" cy="8" r="2"/><circle cx="28" cy="20" r="2"/><circle cx="16" cy="21" r="2"/></g></svg>Gap candidates</button>
       </div>
       <div class="graph-parameters">
