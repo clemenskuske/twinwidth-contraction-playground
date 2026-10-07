@@ -128,3 +128,85 @@ The six-vertex [double star](https://clemenskuske.github.io/twinwidth-contractio
 - [Ordinary width-two reference sequence](https://clemenskuske.github.io/twinwidth-contraction-playground/?graph=double-star&sequence=3-4,5-6,1-2,3-5,1-3): first merge the two distant leaf pairs, then the anchors.
 - [Failing state after postponing both distant pairs](https://clemenskuske.github.io/twinwidth-contraction-playground/?graph=double-star&sequence=1-2): the merged anchor has four red neighbors, exceeding the original reference budget 2+1.
 - [Successful local width-one sequence](https://clemenskuske.github.io/twinwidth-contraction-playground/?graph=double-star&sequence=3-5,4-6,1-3,2-4,1-2): regroup the leaves at their common anchors before absorbing them. Use Back to inspect its intermediate states.
+
+## Merge-width constructions
+
+Choose **Merge-width** in the decomposition selector to build a construction
+sequence on any of the existing graphs. Switching decomposition starts a fresh
+sequence; changing **Radius** preserves the construction and recalculates its
+current width, peak, and undo/redo states.
+
+- Select two bags and use **Resolve as edges** or **Resolve as non-edges**.
+  The operation resolves every remaining original vertex pair between the bags
+  and must agree with the original graph.
+- Select one bag to resolve its internal pairs. Singleton bags have none.
+- Merge using the existing drag, selection, preview, or keyboard controls.
+  A merge is blocked if any resulting bag pair, including the merged bag with
+  itself, would contain both unresolved edges and unresolved non-edges.
+  The preview identifies a conflicting bag. Resolve one of the conflicting
+  current bag pairs before trying the merge again.
+- **Resolve across all bags** offers a convenient starting construction:
+  resolve all edges, merge in any order, then resolve the last bag's remaining
+  non-edges. Every individual bag-pair resolution is an undoable step; this
+  convenience action does not optimize the width.
+- Solid connections are unresolved default edges. Blue dashed connections
+  summarize resolved edges; orange dashed connections summarize resolved
+  non-edges. Loops show internal pairs. **Inspect defaults and resolved pairs**
+  lists the actual original pairs. Both kinds of resolved pairs contribute to
+  width. An absent default connection represents non-edges.
+- The badge on a bag is the maximum reachable-bag count among its original
+  vertices. **Current radius-r width** is the maximum over all original
+  vertices; **Width so far** includes every resolution and merge. The starting
+  bag counts, so a nonempty initial state has width one.
+- Completion requires one bag and all original vertex pairs resolved. Only then
+  does the displayed peak certify an upper bound on radius-r merge-width.
+  Certified catalogue sequences and cyclic examples' playback describe
+  twin-width; their underlying graphs remain usable for manual merge-width
+  constructions.
+
+**Share this construction** exposes a replay link. In addition to existing graph
+parameters, links accept `mode=merge-width`, `radius=2`, and
+`construction=E:1-2,M:2-3,E:1-3,M:1-3,N:3-3`.
+`M` merges two current bags, `E` resolves their remaining edges, and `N` resolves
+their remaining non-edges. A label can name any original vertex inside a current
+bag, including twice for an internal resolution. Numeric IDs and the given
+graph's letter labels both work. Invalid steps stop replay with an accessible
+explanation, retaining the valid prefix. The existing `sequence` parameter still
+accepts merges only; these must satisfy the merge-width validity condition.
+
+For example, open
+[the three-vertex tree with a complete radius-2 construction](https://clemenskuske.github.io/twinwidth-contraction-playground/?graph=tree&vertices=3&mode=merge-width&radius=2&construction=E:1-2,M:2-3,E:1-3,M:1-3,N:3-3)
+after deploying this contribution.
+
+### Definition and implementation
+
+The implementation follows the **construction-sequence** definition of
+Dreier and Toruńczyk,
+[Merge-width and First-Order Model Checking](https://arxiv.org/abs/2502.18065),
+Introduction and Remark 1.1. It maintains a partition of the fixed original
+vertex set and disjoint resolved edges/non-edges. Initially every pair is
+unresolved. Resolve operations act on complete pairs of current parts;
+merge operations coarsen the partition while preserving homogeneity of every
+unresolved bag pair. Completed constructions have one part and every pair
+resolved.
+
+Radius-r width counts parts intersecting a closed radius-r ball in the graph
+of resolved **original pairs**, including both edges and non-edges. It is
+computed separately at each construction step. Paths cannot jump freely
+between members of a bag. This is not a radius computation on the displayed
+quotient graph, nor a count of twin-width red neighbors. In the equivalent
+merge-sequence formulation, the offset between partitions and resolved sets
+must be accounted for; measuring resolutions before merges here preserves
+those intermediate widths.
+
+`merge-width.js` contains the pure construction operations, validity checks,
+original-vertex BFS, and a `Session` subclass. It reuses `engine.js`'s graph
+presets, candidate loader, clone/key helpers, and common `commit`/undo/redo
+history. The existing layout, viewport, canvas, interaction, catalogue, and
+static deployment remain shared. No packages or build step are added.
+
+`merge-width.test.cjs` checks incorrect resolutions, internal/external merge
+conflicts, original-vertex distances, radius changes through redo, completion,
+pre-drag history, all presets, and randomized constructions against independent
+Floyd-Warshall distances and homogeneity checks. Run all checks with
+`node --test *.test.cjs`.

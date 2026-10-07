@@ -145,19 +145,23 @@
       const source = before.nodes.find(n => n.id === sourceId);
       const target = before.nodes.find(n => n.id === targetId);
       const next = contract(this.graph, sourceId, targetId);
-      this.history.push({graph: clone(before), pair: [source.members.slice(), target.members.slice()]});
+      this.commit(next, [source.members.slice(), target.members.slice()], before);
+    }
+    // Shared by contractions and merge-width resolve/merge operations.
+    commit(next, pair, before = this.graph, operation = 'merge') {
+      this.history.push({graph: clone(before), pair, operation});
       this.future = []; this.graph = next;
     }
     back() {
       const entry = this.history.pop();
       if (!entry) return false;
-      this.future.push({graph: clone(this.graph), pair: entry.pair});
+      this.future.push({...entry, graph: clone(this.graph)});
       this.graph = entry.graph; return true;
     }
     forward() {
       const entry = this.future.pop();
       if (!entry) return false;
-      this.history.push({graph: clone(this.graph), pair: entry.pair});
+      this.history.push({...entry, graph: clone(this.graph)});
       this.graph = entry.graph; return true;
     }
   }

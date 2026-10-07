@@ -1,7 +1,11 @@
 (() => {
   'use strict';
   const T = window.TwinWidth;
-  const session = new T.Session('tree', 15);
+  const M = window.MergeWidth;
+  let session = new T.Session('tree', 15);
+  const isMergeWidth = () => session instanceof M.Session;
+  const currentWidth = graph => isMergeWidth() ? M.width(graph) : T.maxDegree(graph);
+  const sequenceComplete = () => isMergeWidth() ? M.complete(session.graph) : session.graph.nodes.length === 1;
   const catalogue = window.TwinWidthCandidates || {graphs: [], inputRecords: 0, isomorphicDuplicatesRemoved: 0};
   const candidates = catalogue.graphs;
   const checkedDistance3 = window.TwinWidthDistance3?.catalogueGeneratedAt === catalogue.generatedAt ? window.TwinWidthDistance3.graphs : {};
@@ -59,10 +63,12 @@
     const [min, max] = limits[kind];
     return {
       kind,
+      mode: queryValue('mode') === 'merge-width' ? 'merge-width' : 'twin-width',
+      radius: numericQuery(queryValue('radius'), 1, 1, Number.MAX_SAFE_INTEGER),
       size: numericQuery(queryValue('vertices', 'size', 'order'), sizes[kind], min, max),
       subdivisions: numericQuery(queryValue('subdivisions', 'subdivision', 'subdivisionsPerEdge'), 1, 0, 20),
       relayout: parseBoolean(queryValue('relayout', 'forceLayout', 'force-layout', 'force'), true),
-      sequence: queryValue('sequence', 'contractions') || researchSequence
+      sequence: queryValue('construction', 'sequence', 'contractions') || (queryValue('mode') === 'merge-width' ? '' : researchSequence)
     };
   })();
   const maskMembers = mask => Array.from({length: selectedCandidate?.n || 0}, (_, i) => i + 1).filter(id => mask & (1 << (id - 1)));
@@ -206,7 +212,9 @@
     const pair = previewPair();
     if (!pair) { previewCache = null; return null; }
     if (previewCache?.graph !== session.graph || previewCache.a !== pair[0] || previewCache.b !== pair[1]) {
-      previewCache = {graph: session.graph, a: pair[0], b: pair[1], result: T.contract(session.graph, ...pair)};
+      const problem = isMergeWidth() ? M.mergeProblem(session.graph, ...pair) : null;
+      previewCache = {graph: session.graph, a: pair[0], b: pair[1], problem,
+        result: problem ? null : (isMergeWidth() ? M.merge : T.contract)(session.graph, ...pair)};
     }
     return previewCache.result;
   }
@@ -215,14 +223,14 @@
     const classes = ['vertex', node.members.length > 1 ? 'merged' : '', node.branch ? 'branch' : '', selection.includes(node.id) ? 'selected' : '', options.target ? 'target' : '', options.dragging ? 'dragging' : ''].filter(Boolean).join(' ');
     const bagSize = node.members.length;
     const labels = memberLabels(node.members), label = bagSize === 2 ? labels.join(',') : labels[0];
-    const description = `${nodeName(node)}. Red degree ${red}. ${bagSize > 1 ? `${bagSize} original vertices. ` : ''}Select to prepare a contraction.`;
-    return `<g class="${classes}" data-node="${node.id}" role="button" tabindex="0" aria-pressed="${selection.includes(node.id)}" aria-label="${description}" transform="translate(${p.x},${p.y})"><title>${description}</title><circle class="selection-ring" r="${radius + 5}"/><circle class="node-disc" r="${radius}"/><text style="font-size:${bagSize === 2 ? Math.min(11, radius * .62) : Math.min(13, radius * .8)}px">${label}</text>${red ? `<g class="red-badge" transform="translate(${radius * .81},${-radius * .83})"><circle r="9"/><text>${red}</text></g>` : ''}${bagSize > 2 ? `<g class="bag-badge" transform="translate(0,${radius + 12})"><text>×${bagSize}</text></g>` : ''}</g>`;
+    const description = `${nodeName(node)}. ${isMergeWidth() ? 'Maximum reachable bags among original members' : 'Red degree'} ${red}. ${bagSize > 1 ? `${bagSize} original vertices. ` : ''}${isMergeWidth() ? 'Select to resolve pairs or preview a merge.' : 'Select to prepare a contraction.'}`;
+    return `<g class="${classes}" data-node="${node.id}" role="button" tabindex="0" aria-pressed="${selection.includes(node.id)}" aria-label="${description}" transform="translate(${p.x},${p.y})"><title>${description}</title><circle class="selection-ring" r="${radius + 5}"/><circle class="node-disc" r="${radius}"/><text style="font-size:${bagSize === 2 ? Math.min(11, radius * .62) : Math.min(13, radius * .8)}px">${label}</text>${red ? `<g class="red-badge${isMergeWidth() ? ' reach-badge' : ''}" transform="translate(${radius * .81},${-radius * .83})"><circle r="9"/><text>${red}</text></g>` : ''}${bagSize > 2 ? `<g class="bag-badge" transform="translate(0,${radius + 12})"><text>×${bagSize}</text></g>` : ''}</g>`;
   }
   function draw() {
     const preview = previewGraph(), visibleGraph = preview || session.graph;
-    const redDegrees = T.degrees(visibleGraph);
+    const redDegrees = isMergeWidth() ? M.metrics(visibleGraph).bagCounts : T.degrees(visibleGraph);
     const nodeMap = new Map(visibleGraph.nodes.map(n => [n.id, n]));
-    $('edges').innerHTML = Object.entries(visibleGraph.edges).map(([pair, color]) => {
+    $('edges').innerHTML = isMergeWidth() ? mergeEdgeMarkup(visibleGraph, nodeMap) : Object.entries(visibleGraph.edges).map(([pair, color]) => {
       const [a, b] = pair.split(':').map(Number), u = screen(nodeMap.get(a)), v = screen(nodeMap.get(b));
       return `<line class="edge${color === T.RED ? ' red' : ''}" x1="${u.x}" y1="${u.y}" x2="${v.x}" y2="${v.y}"/>`;
     }).join('');
@@ -233,6 +241,7 @@
       $('nodes').insertAdjacentHTML('beforeend', nodeMarkup(source, {}, {dragging: true}));
     }
     updatePreview(preview, pair);
+    if (isMergeWidth()) renderMergeActions();
     updateView();
   }
   function updatePreview(preview, pair) {
@@ -241,23 +250,36 @@
     panel.classList.toggle('locked', !!preview && previewLocked);
     $('preview-values').hidden = !preview;
     $('merge-selected').hidden = !preview || !!drag;
+    $('merge-selected').disabled = false;
+    const problem = previewCache?.problem;
+    panel.classList.toggle('blocked', !!problem);
     message.className = 'canvas-message';
-    if (preview) {
+    if (problem) {
+      $('preview-heading').textContent = 'RESOLVE BEFORE MERGING';
+      $('preview-copy').textContent = `Unresolved pairs would mix ${problem.edges} edge${problem.edges === 1 ? '' : 's'} and ${problem.nonedges} non-edge${problem.nonedges === 1 ? '' : 's'} ${problem.internal ? 'inside the merged bag' : `towards ${shortBag(problem.members)}`}. Resolve conflicting pairs first.`;
+      $('merge-selected').hidden = !!drag;
+      $('merge-selected').disabled = true;
+      message.classList.add('blocked');
+      message.textContent = 'Merge blocked · resolve conflicting pairs first';
+    } else if (preview) {
       const a = session.graph.nodes.find(n => n.id === pair[0]), b = session.graph.nodes.find(n => n.id === pair[1]);
-      $('preview-heading').textContent = previewLocked ? 'LOCKED CONTRACTION PREVIEW' : 'CONTRACTION PREVIEW';
+      $('preview-heading').textContent = previewLocked ? 'LOCKED MERGE PREVIEW' : 'MERGE PREVIEW';
       $('preview-copy').textContent = `${shortBag(a.members)} + ${shortBag(b.members)} · width ${session.graph.peak} → ${preview.peak}${previewLocked ? ' · double-click a vertex to change the pair' : ' · double-click either vertex to keep this preview'}`;
-      $('preview-degree').textContent = T.maxDegree(preview);
+      $('preview-degree').textContent = currentWidth(preview);
       message.classList.add('previewing');
-      message.textContent = drag ? `Release to merge · max. red degree ${T.maxDegree(preview)}` : previewLocked ? 'Preview locked · choose Merge to apply' : 'Preview shown · double-click either vertex to lock it';
-    } else if (session.graph.nodes.length === 1) {
+      message.textContent = drag ? `Release to merge · ${isMergeWidth() ? 'radius width' : 'max. red degree'} ${currentWidth(preview)}` : previewLocked ? 'Preview locked · choose Merge to apply' : 'Preview shown · double-click either vertex to lock it';
+    } else if (sequenceComplete()) {
       $('preview-heading').textContent = 'SEQUENCE COMPLETE';
       $('preview-copy').textContent = `You found a sequence of width ${session.graph.peak}. Go back to explore another choice.`;
       message.classList.add('complete');
       message.textContent = `Decomposition complete · width ${session.graph.peak}`;
     } else {
-      $('preview-heading').textContent = selection.length === 1 ? 'ONE VERTEX SELECTED' : 'TRY A CONTRACTION';
+      $('preview-heading').textContent = isMergeWidth() && session.graph.nodes.length === 1 ? 'FINISH RESOLVING' : selection.length === 1 ? 'ONE BAG SELECTED' : 'TRY A MERGE';
       $('preview-copy').textContent = selection.length === 1 ? `${nodeName(session.graph.nodes.find(n => n.id === selection[0]))}. Select a second vertex to preview a merge.` : 'Move any two vertices together. They don’t need to share an edge.';
-      if (drag?.moved) message.textContent = 'Move over another vertex to preview a merge';
+      if (isMergeWidth() && session.graph.nodes.length === 1) {
+        $('preview-copy').textContent = 'One bag remains. Select it to resolve its remaining pairs, or use Resolve across all bags.';
+        message.textContent = 'One bag remains · resolve remaining pairs to complete';
+      } else if (drag?.moved) message.textContent = 'Move over another vertex to preview a merge';
       else if (selection.length === 1) message.textContent = 'Select another vertex to preview · Esc to cancel';
       else message.innerHTML = '<span class="gesture" aria-hidden="true">○ → ○</span><span>Drag a vertex onto another to merge</span>';
     }
@@ -282,7 +304,7 @@
     return check.pairs.every(pair => pair.status === 'NO');
   }
   function renderCandidateDetail() {
-    const active = session.graph.kind === 'candidate' && selectedCandidate;
+    const active = !isMergeWidth() && session.graph.kind === 'candidate' && selectedCandidate;
     $('candidate-detail').hidden = !active;
     if (!active) return;
     const candidate = selectedCandidate;
@@ -430,38 +452,42 @@
   }
   function render() {
     const g = session.graph, steps = session.history.length;
+    updateModeUI();
+    const merges = isMergeWidth() ? session.initialCount - g.nodes.length : steps;
     $('graph-title').textContent = g.kind === 'candidate' ? `GAP CANDIDATE ${selectedCandidate.id}` : g.kind === 'research' ? selectedResearch.title.toUpperCase() : names[g.kind].toUpperCase();
-    $('graph-meta').textContent = `${g.nodes.length} ${g.nodes.length === 1 ? 'vertex' : 'vertices'} · ${Object.keys(g.edges).length} edges`;
-    $('step-count').textContent = `${steps} / ${session.initialCount - 1}`;
+    $('graph-meta').textContent = isMergeWidth() ? `${g.nodes.length} ${g.nodes.length === 1 ? 'bag' : 'bags'} · ${session.initialCount} original vertices` : `${g.nodes.length} ${g.nodes.length === 1 ? 'vertex' : 'vertices'} · ${Object.keys(g.edges).length} edges`;
+    $('step-count').textContent = `${merges} / ${session.initialCount - 1}`;
     const progress = document.querySelector('.progress-track');
     progress.setAttribute('aria-valuemax', session.initialCount - 1);
-    progress.setAttribute('aria-valuenow', steps);
-    $('progress-fill').style.width = `${steps / (session.initialCount - 1) * 100}%`;
+    progress.setAttribute('aria-valuenow', merges);
+    $('progress-fill').style.width = `${merges / (session.initialCount - 1) * 100}%`;
     $('peak-degree').textContent = g.peak;
-    $('current-degree').textContent = T.maxDegree(g);
+    $('current-degree').textContent = currentWidth(g);
     $('back').disabled = !steps;
     $('canvas-back').disabled = !steps;
     $('forward').disabled = !session.future.length;
     $('empty-history').hidden = !!steps;
     $('history-list').innerHTML = session.history.map((entry, i) => {
       const after = i === steps - 1 ? g : session.history[i + 1].graph;
-      const remote = g.kind === 'candidate' && witnessPrefixValid() ? selectedCandidate.remoteMerges.find(move => move.step === i + 1) : null;
-      return `<li title="Merge ${shortBag(entry.pair[0])} and ${shortBag(entry.pair[1])}${remote ? ` at distance ${remote.distance}` : ''}"><span class="step-index">${String(i + 1).padStart(2, '0')}</span><span class="pair">${shortBag(entry.pair[0])} + ${shortBag(entry.pair[1])}</span>${remote ? `<span class="remote-flag">d${remote.distance}</span>` : ''}<span class="step-width">Δr ${T.maxDegree(after)}</span></li>`;
+      const remote = !isMergeWidth() && g.kind === 'candidate' && witnessPrefixValid() ? selectedCandidate.remoteMerges.find(move => move.step === i + 1) : null;
+      const operation = entry.operation === 'resolve-edge' ? 'Resolve edges' : entry.operation === 'resolve-nonedge' ? 'Resolve non-edges' : 'Merge';
+      return `<li title="${operation} ${shortBag(entry.pair[0])} and ${shortBag(entry.pair[1])}${remote ? ` at distance ${remote.distance}` : ''}"><span class="step-index">${String(i + 1).padStart(2, '0')}</span><span class="pair">${isMergeWidth() && entry.operation?.startsWith('resolve-') ? `${entry.operation === 'resolve-edge' ? 'E' : 'N'}: ` : ''}${shortBag(entry.pair[0])} + ${shortBag(entry.pair[1])}</span>${remote ? `<span class="remote-flag">d${remote.distance}</span>` : ''}<span class="step-width">${isMergeWidth() ? 'w' : 'Δr'} ${currentWidth(after)}</span></li>`;
     }).reverse().join('');
-    $('width-note').textContent = g.nodes.length === 1 ? `This sequence proves twin-width ≤ ${g.peak}.` : 'A completed sequence gives an upper bound on twin-width.';
+    const parameter = isMergeWidth() ? `radius-${session.radius} merge-width` : 'twin-width';
+    $('width-note').textContent = sequenceComplete() ? `This sequence proves ${parameter} ≤ ${g.peak}.` : `A completed sequence gives an upper bound on ${parameter}.`;
     renderCandidateDetail();
     renderResearchDetail();
     draw();
   }
   function selectNode(id) {
-    if (session.graph.nodes.length < 2) return;
+    if (session.graph.nodes.length < 2 && !isMergeWidth()) return;
     previewLocked = false;
     if (selection.includes(id)) selection = selection.filter(n => n !== id);
     else selection = selection.length < 2 ? [...selection, id] : [id];
     draw();
     svg.querySelector(`[data-node="${id}"]`)?.focus({preventScroll: true});
     const preview = previewGraph();
-    if (preview) announce(`Contraction preview. Maximum red degree ${T.maxDegree(preview)}; width ${preview.peak}. Use Merge selected vertices to apply.`);
+    if (preview) announce(`Contraction preview. ${isMergeWidth() ? 'Radius width' : 'Maximum red degree'} ${currentWidth(preview)}; width ${preview.peak}. Use Merge selected vertices to apply.`);
   }
   function lockPreview(id, suppressFollowingClick = false) {
     const pair = selection.length === 2 ? selection : selection.length === 1 && selection[0] !== id ? [selection[0], id] : null;
@@ -475,12 +501,18 @@
   }
   function finishMerge(a, b, before) {
     const source = session.graph.nodes.find(n => n.id === a), target = session.graph.nodes.find(n => n.id === b);
+    if (isMergeWidth() && M.mergeProblem(session.graph, a, b)) {
+      if (before) session.graph = before;
+      selection = [a, b]; previewLocked = false; previewCache = null;
+      render(); wakeForceLayout(); announce('Merge blocked. Resolve conflicting pairs first.'); return;
+    }
     session.merge(a, b, before);
     forceSimulation = null;
     selection = []; hover = null; previewLocked = false;
     render();
     wakeForceLayout();
-    announce(`Merged ${membersText(source.members)} and ${membersText(target.members)}. ${session.graph.nodes.length} ${session.graph.nodes.length === 1 ? 'vertex remains' : 'vertices remain'}. Maximum red degree ${T.maxDegree(session.graph)}. Width so far ${session.graph.peak}.`);
+    const count = session.graph.nodes.length;
+    announce(`Merged ${membersText(source.members)} and ${membersText(target.members)}. ${count} ${isMergeWidth() ? count === 1 ? 'bag remains' : 'bags remain' : count === 1 ? 'vertex remains' : 'vertices remain'}. ${isMergeWidth() ? 'Radius width' : 'Maximum red degree'} ${currentWidth(session.graph)}. Width so far ${session.graph.peak}.`);
   }
   function cancelDrag() {
     if (!drag) return;
@@ -507,18 +539,21 @@
     if (!session.back()) return;
     forceSimulation = null;
     selection = []; previewLocked = false; render(); wakeForceLayout();
-    announce(`Undid contraction. ${session.graph.nodes.length} vertices remain. Width so far ${session.graph.peak}.`);
+    const count = session.graph.nodes.length;
+    announce(`Undid operation. ${count} ${isMergeWidth() ? count === 1 ? 'bag remains' : 'bags remain' : count === 1 ? 'vertex remains' : 'vertices remain'}. Width so far ${session.graph.peak}.`);
   }
   function goForward() {
     cancelInteractions();
     if (!session.forward()) return;
     forceSimulation = null;
-    selection = []; previewLocked = false; render(); wakeForceLayout(); announce('Contraction restored.');
+    selection = []; previewLocked = false; render(); wakeForceLayout(); announce('Operation restored.');
   }
   function sequenceParts(specification) {
     return String(specification).split(/[;,]/).map(part => part.trim()).filter(Boolean).map(part => {
-      const values = part.split(/\s*(?:-|:|\+|\s+)\s*/).filter(Boolean);
-      return {raw: part, values};
+      const prefix = part.match(/^([MEN]):/i);
+      const values = (prefix ? part.slice(2) : part).split(/\s*(?:-|:|\+|\s+)\s*/).filter(Boolean);
+      const operation = prefix ? {M: 'merge', E: 'edge', N: 'nonedge'}[prefix[1].toUpperCase()] : 'merge';
+      return {raw: part, values, operation};
     });
   }
   function sequenceNode(value) {
@@ -534,8 +569,13 @@
       if (part.values.length !== 2) { error = `Could not read “${part.raw}”; use pairs such as 1-2 or a-b.`; break; }
       const source = sequenceNode(part.values[0]), target = sequenceNode(part.values[1]);
       if (!source || !target) { error = `Could not find both vertices in “${part.raw}”.`; break; }
-      if (source.id === target.id) { error = `“${part.raw}” refers to the same current bag twice.`; break; }
-      session.merge(source.id, target.id);
+      if (part.operation !== 'merge' && !isMergeWidth()) { error = 'Resolve steps require merge-width mode.'; break; }
+      if (source.id === target.id && part.operation === 'merge') { error = `“${part.raw}” refers to the same current bag twice.`; break; }
+      try {
+        if (part.operation === 'merge') session.merge(source.id, target.id);
+        else session.resolve(source.id, target.id, part.operation);
+      }
+      catch (problem) { error = `Could not apply “${part.raw}”: ${problem.message}`; break; }
       applied++;
     }
     return {applied, error};
@@ -565,6 +605,7 @@
     document.querySelectorAll('[data-kind]').forEach(button => button.setAttribute('aria-pressed', button.dataset.kind === kind));
     $('family-description').textContent = kind === 'doubleStar' ? 'Leaves 3,5 at anchor 1; leaves 4,6 at anchor 2. Both widths are 1. Postponing the distant pairs 3–4 and 5–6 before merging 1–2 creates red degree 4.' : kind === 'tree' ? `A binary tree on ${sizes[kind]} vertices.` : kind === 'clique' ? `K${sizes[kind]} · every pair of vertices is adjacent.` : kind === 'subdivided' ? `K${sizes[kind]} · ${subdivisions} new ${subdivisions === 1 ? 'vertex' : 'vertices'} per edge · ${subdivisions + 1} edges per path · ${session.initialCount} vertices total.` : kind === 'customPath' ? 'The specified graph plus the path b–l–m–f.' : kind === 'candidate' ? `${selectedCandidate.category.name} · ${selectedCandidate.structuralGroup} · source ${selectedCandidate.source}.` : 'The specified graph on vertices a through k.';
     if (kind === 'research') $('family-description').textContent = selectedResearch.description;
+    if (isMergeWidth() && kind === 'doubleStar') $('family-description').textContent = 'Leaves 3,5 at anchor 1; leaves 4,6 at anchor 2. The anchors are adjacent.';
     renderGallery();
     render();
     if (!options.sequence) {
@@ -576,7 +617,7 @@
     render();
     wakeForceLayout();
     const suffix = result.error ? ` ${result.error}` : '';
-    announce(result.applied ? `Loaded ${result.applied} initial contraction${result.applied === 1 ? '' : 's'}.${suffix}` : `Started ${names[kind].toLowerCase()} with no initial contractions.${suffix}`);
+    announce(result.applied ? `Loaded ${result.applied} initial step${result.applied === 1 ? '' : 's'}.${suffix}` : `Started ${names[kind].toLowerCase()} with no initial steps.${suffix}`);
   }
 
   svg.addEventListener('pointerdown', event => {
@@ -746,14 +787,18 @@
     $('research-certificate').value = researchCertificate;
     $('research-title').textContent = `${example.n} vertices · ${example.m} edges`;
     $('research-bounds').textContent = example.bounds;
+    $('research-bounds').hidden = isMergeWidth();
+    $('research-certificate').disabled = isMergeWidth();
     $('research-description').textContent = `${example.description} Vertex labels in this app start at 1.`;
     $('research-certificate').options[1].textContent = `Local width ${example.local.width}`;
     const valid = researchPrefixValid(), count = session.history.length;
     $('research-progress').textContent = valid ? `${researchCertificate === 'ordinary' ? 'Ordinary' : 'Local'} sequence: step ${count} of ${certificate.sequence.length} · certified width ${certificate.width}.` : 'Your sequence differs from this certificate; replay will restart the graph.';
-    $('research-next').disabled = $('research-all').disabled = valid && count === certificate.sequence.length;
+    $('research-next').disabled = $('research-all').disabled = isMergeWidth() || (valid && count === certificate.sequence.length);
+    $('research-interaction').disabled = isMergeWidth();
+    if (isMergeWidth()) $('research-progress').textContent = 'These certificates describe twin-width. Build a merge-width construction using Resolve pairs.';
   }
   function playResearch(ending) {
-    if (!selectedResearch || session.graph.kind !== 'research') return;
+    if (isMergeWidth() || !selectedResearch || session.graph.kind !== 'research') return;
     if (!researchPrefixValid() || session.history.length > ending) start('research');
     stopForceLayout();
     const sequence = selectedResearch[researchCertificate].sequence;
@@ -782,7 +827,7 @@
   $('research-all').addEventListener('click', () => playResearch(selectedResearch[researchCertificate].sequence.length));
   $('research-interaction').addEventListener('click', () => { researchCertificate = 'ordinary'; start('research'); playResearch(selectedResearch.interactionStep); });
   function playWitness(all = false) {
-    if (!selectedCandidate || session.graph.kind !== 'candidate') return;
+    if (isMergeWidth() || !selectedCandidate || session.graph.kind !== 'candidate') return;
     if (!witnessPrefixValid()) start('candidate');
     const ending = all ? selectedCandidate.sequence.length : Math.min(selectedCandidate.sequence.length, session.history.length + 1);
     stopForceLayout();
@@ -798,7 +843,7 @@
     announce(`Showing witness step ${session.history.length} of ${selectedCandidate.sequence.length}; width so far ${session.graph.peak}.`);
   }
   function playAlternateSequence(sequence, label) {
-    if (!selectedCandidate || session.graph.kind !== 'candidate') return;
+    if (isMergeWidth() || !selectedCandidate || session.graph.kind !== 'candidate') return;
     start('candidate');
     stopForceLayout();
     for (const [a, b] of sequence) {
@@ -832,6 +877,109 @@
   $('candidate-search').addEventListener('input', () => { candidatePage = 0; renderGallery(); });
   $('candidate-prev').addEventListener('click', () => { candidatePage--; renderGallery(); });
   $('candidate-next').addEventListener('click', () => { candidatePage++; renderGallery(); });
+
+  function updateModeUI() {
+    const merge = isMergeWidth();
+    $('decomposition-mode').value = merge ? 'merge-width' : 'twin-width';
+    $('merge-radius-control').hidden = $('merge-actions').hidden = !merge;
+    if (merge) $('merge-radius').value = session.radius;
+    document.querySelector('.identity h1').textContent = merge ? 'Merge-width' : 'Twin-width';
+    document.querySelector('.identity p').textContent = merge ? 'Construction playground' : 'Contraction playground';
+    $('width-description').textContent = merge ? `Largest radius-${session.radius} bag count reached along this construction.` : 'Largest red degree reached along this sequence.';
+    $('current-label').textContent = merge ? `Current radius-${session.radius} width` : 'Current max. red degree';
+    $('preview-label').textContent = merge ? 'Radius width after' : 'Max. red degree after';
+    $('history-title').textContent = merge ? 'Construction steps' : 'Contractions';
+    $('forward').setAttribute('aria-label', 'Redo operation');
+    document.querySelector('.progress-track').setAttribute('aria-label', 'Merges completed');
+    document.querySelector('.canvas-panel').setAttribute('aria-label', merge ? 'Merge-width workspace' : 'Contraction workspace');
+    document.querySelector('.sidebar').setAttribute('aria-label', merge ? 'Construction sequence' : 'Contraction sequence');
+    $('graph-description').textContent = merge ? 'Select bags to resolve pairs or preview a merge. Drag one bag onto another to merge when unresolved pairs remain homogeneous. Scroll to zoom; drag empty space to pan.' : 'Drag one vertex onto another to contract them. Scroll or pinch to zoom. Drag empty space to pan. Use plus, minus, or 0 to zoom or fit.';
+    $('empty-history').textContent = merge ? 'Your first resolve or merge starts the construction.' : 'Your first merge starts the sequence.';
+    document.querySelector('.page-footer > span').textContent = merge ? 'Resolve pairs, then merge bags.' : 'One contraction at a time.';
+    $('graph-legend').innerHTML = merge ? '<span><i class="edge-key"></i>Default edge</span><span><i class="edge-key resolved-edge"></i>Resolved edges</span><span><i class="edge-key resolved-nonedge"></i>Resolved non-edges</span><span>Badge: reachable bags</span>' : '<span><i class="edge-key"></i>Black edge</span><span><i class="edge-key red"></i>Red edge</span><span class="degree-legend"><i class="degree-key">2</i>Red degree</span>';
+  }
+  function mergeEdgeMarkup(graph, nodeMap) {
+    return M.relations(graph).map(r => {
+      const a = screen(nodeMap.get(r.a)), b = screen(nodeMap.get(r.b));
+      const types = [...(r.edges ? [''] : []), ...(r.resolvedEdges.length ? ['resolved-edge'] : []), ...(r.resolvedNonedges.length ? ['resolved-nonedge'] : [])];
+      return types.map((type, index) => {
+        const offset = (index - (types.length - 1) / 2) * 6;
+        if (r.a === r.b) return `<path class="edge ${type}" d="M ${a.x - 12} ${a.y - radius} C ${a.x - 50 - index * 9} ${a.y - radius - 54}, ${a.x + 50 + index * 9} ${a.y - radius - 54}, ${a.x + 12} ${a.y - radius}"/>`;
+        return `<line class="edge ${type}" x1="${a.x}" y1="${a.y + offset}" x2="${b.x}" y2="${b.y + offset}"/>`;
+      }).join('');
+    }).join('');
+  }
+  let inspectedGraph = null;
+  function renderMergeActions() {
+    const graph = session.graph;
+    const a = graph.nodes.find(n => n.id === selection[0]), b = selection.length === 1 ? a : graph.nodes.find(n => n.id === selection[1]);
+    const r = a && b ? M.relation(graph, a, b) : null;
+    $('resolve-edge').disabled = !r?.edges || !!r.nonedges || !!drag;
+    $('resolve-nonedge').disabled = !r?.nonedges || !!r.edges || !!drag;
+    $('resolve-selection').textContent = r ? `${a === b ? `Inside ${shortBag(a.members)}` : `${shortBag(a.members)} ↔ ${shortBag(b.members)}`}: ${r.edges} unresolved edges, ${r.nonedges} unresolved non-edges.` : 'Select two bags, or one bag to resolve inside it.';
+    const resolved = Object.keys(graph.mergeWidth.resolved).length, n = session.initialCount;
+    $('resolved-count').textContent = `${resolved} / ${n * (n - 1) / 2} original pairs resolved.`;
+    const link = new URL(window.location.href);
+    link.search = '';
+    link.searchParams.set('graph', graph.kind);
+    if (graph.kind === 'candidate') link.searchParams.set('candidate', selectedCandidate.id);
+    if (graph.kind === 'research') link.searchParams.set('example', selectedResearch.id);
+    link.searchParams.set('vertices', sizes[graph.kind]);
+    link.searchParams.set('subdivisions', subdivisions);
+    link.searchParams.set('mode', 'merge-width');
+    link.searchParams.set('radius', session.radius);
+    link.searchParams.set('relayout', forceLayoutEnabled ? '1' : '0');
+    link.searchParams.set('construction', session.history.map(entry => {
+      const prefix = entry.operation === 'resolve-edge' ? 'E' : entry.operation === 'resolve-nonedge' ? 'N' : 'M';
+      return `${prefix}:${entry.pair[0][0]}-${entry.pair[1][0]}`;
+    }).join(','));
+    $('construction-link').value = link.href;
+    const metrics = M.metrics(graph);
+    $('width-witness').textContent = `Vertex ${memberLabel(metrics.witness)} reaches ${metrics.maximum} ${metrics.maximum === 1 ? 'bag' : 'bags'} within radius ${session.radius} (including its own bag).`;
+    if (inspectedGraph === graph) return;
+    inspectedGraph = graph;
+    const relations = M.relations(graph);
+    $('resolve-all-edges').disabled = !relations.some(r => r.edges && !r.nonedges);
+    $('resolve-all-nonedges').disabled = !relations.some(r => r.nonedges && !r.edges);
+    const container = $('resolved-pairs'); container.replaceChildren();
+    for (const r of relations) {
+      if (!r.edges && !r.resolvedEdges.length && !r.resolvedNonedges.length && r.a !== r.b) continue;
+      const row = document.createElement('div'); row.className = 'resolved-relation';
+      const a = graph.nodes.find(n => n.id === r.a), b = graph.nodes.find(n => n.id === r.b);
+      const pairText = pair => pair.split(':').map(id => memberLabel(Number(id))).join('–');
+      row.textContent = `${shortBag(a.members)} / ${shortBag(b.members)}: default ${r.edges ? 'edge' : r.nonedges ? 'non-edge' : 'fully resolved'}; E: ${r.resolvedEdges.map(pairText).join(', ') || '∅'}; N: ${r.resolvedNonedges.map(pairText).join(', ') || '∅'}`;
+      container.append(row);
+    }
+  }
+  function finishResolve(type, all = false) {
+    if (!isMergeWidth()) return;
+    cancelInteractions();
+    if (all) session.resolveRemaining(type);
+    else if (selection.length) session.resolve(selection[0], selection[1] ?? selection[0], type);
+    else return;
+    previewLocked = false; previewCache = null; forceSimulation = null;
+    render(); wakeForceLayout(); announce(`Resolved ${type === 'edge' ? 'edges' : 'non-edges'}. Width so far ${session.graph.peak}.`);
+  }
+  $('resolve-edge').addEventListener('click', () => finishResolve('edge'));
+  $('resolve-nonedge').addEventListener('click', () => finishResolve('nonedge'));
+  $('resolve-all-edges').addEventListener('click', () => finishResolve('edge', true));
+  $('resolve-all-nonedges').addEventListener('click', () => finishResolve('nonedge', true));
+  $('decomposition-mode').addEventListener('change', () => {
+    const kind = session.graph.kind;
+    cancelInteractions();
+    session = $('decomposition-mode').value === 'merge-width' ? new M.Session() : new T.Session();
+    start(kind);
+  });
+  function applyMergeRadius() {
+    const input = $('merge-radius'), value = Number(input.value);
+    if (!input.checkValidity() || !Number.isSafeInteger(value) || value < 1) { input.reportValidity(); input.value = session.radius; return; }
+    if (!isMergeWidth()) return;
+    cancelInteractions(); session.setRadius(value); previewCache = null;
+    render(); announce(`Radius ${value}. Sequence width recalculated as ${session.graph.peak}.`);
+  }
+  $('merge-radius').addEventListener('change', applyMergeRadius);
+  $('merge-radius').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); applyMergeRadius(); } });
+
   $('reset').addEventListener('click', () => start(session.graph.kind));
   document.querySelectorAll('[data-kind]').forEach(button => button.addEventListener('click', () => { if (button.dataset.kind !== session.graph.kind) start(button.dataset.kind); }));
   function applySize() {
@@ -907,5 +1055,6 @@
   subdivisions = initialUrlConfig.subdivisions;
   forceLayoutEnabled = initialUrlConfig.relayout;
   $('force-layout').checked = forceLayoutEnabled;
+  if (initialUrlConfig.mode === 'merge-width') session = new M.Session('tree', 15, 1, initialUrlConfig.radius);
   start(initialUrlConfig.kind, {sequence: initialUrlConfig.sequence});
 })();

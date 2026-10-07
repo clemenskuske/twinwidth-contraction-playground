@@ -64,3 +64,13 @@
 .remote-flag{font:9px var(--mono);color:#a73931;background:#fff0ed;border-radius:4px;padding:2px 4px}
 @media(max-width:1050px){.gallery-heading{align-items:start;flex-direction:column}.gallery-filters{width:100%}.gallery-filters label{flex:1}.gallery-filters select,.gallery-filters input{width:100%}}
 @media(max-width:760px){.candidate-gallery{padding:17px 15px}.candidate-list{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}.candidate-card{padding:11px;min-height:86px}.gallery-heading h2{font-size:19px}.graph-options{overflow-x:auto;justify-content:flex-start}.graph-option{flex:none}.candidate-detail{grid-column:1/-1}}
+
+/* Merge-width shares the canvas and session controls with twin-width. */
+.decomposition-controls{display:flex;align-items:center;flex-wrap:wrap;gap:12px 24px;margin:0 0 20px;color:var(--muted);font-size:12px}
+.decomposition-controls label{display:flex;align-items:center;gap:10px}.decomposition-controls select{font:inherit;color:var(--ink);background:white;border:1px solid #d4ddd2;border-radius:8px;padding:10px}.decomposition-controls input{padding:8px;width:78px}
+#mode-help{font-size:11px}.merge-actions{border:1px solid var(--line);border-radius:10px;background:var(--paper);padding:15px;margin-bottom:22px;grid-column:1/-1}.merge-actions h3{font-size:12px}.merge-actions p{font-size:11px;color:var(--muted);line-height:1.6;margin:9px 0}.merge-actions summary{font-size:11px;color:var(--green);cursor:pointer;margin-top:12px}
+.resolve-buttons{display:grid;gap:7px}.resolve-buttons button{font:inherit;font-size:11px;padding:9px;border:1px solid #b6cfc2;border-radius:6px;background:#edf5ec}.resolved-relation{font:10px/1.7 var(--mono);border-top:1px solid var(--line);padding:7px 0;overflow-wrap:anywhere}#resolved-pairs{max-height:230px;overflow:auto}
+.edge.resolved-edge,.edge-key.resolved-edge{stroke:#3476ad;border-color:#3476ad;stroke-dasharray:4 3}.edge.resolved-nonedge,.edge-key.resolved-nonedge{stroke:#b56b25;border-color:#b56b25;stroke-dasharray:2 4}.edge.resolved-edge,.edge.resolved-nonedge{stroke-width:2;fill:none}.edge-key.resolved-edge,.edge-key.resolved-nonedge{border-top-style:dashed}
+.vertex .reach-badge circle{fill:#3476ad}.preview-panel.blocked{background:#fff4e7;border-color:#d9aa70}.canvas-message.blocked{white-space:normal;background:#fff4e7;color:#815a2c}
+.merge-actions label{display:block;font-size:11px;margin:10px 0 5px;color:var(--muted)}#construction-link{width:100%;min-width:0;padding:8px;border:1px solid var(--line);border-radius:6px;font:10px var(--mono);color:var(--ink)}
+.graph-options{min-width:0;max-width:100%;overflow-x:auto}
